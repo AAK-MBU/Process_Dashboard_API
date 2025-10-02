@@ -82,6 +82,14 @@ class ProcessStepBase(SQLModel):
     name: str = Field(max_length=255, index=True)
     process_id: int | None = Field(default=None, foreign_key="process.id")
 
+    # Genkørsel funktionalitet - template for step type
+    is_rerunnable: bool = Field(default=False, description="Whether this step type supports reruns")
+    rerun_config: dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=Column(JSON),
+        description="Template configuration for how to rerun this step type",
+    )
+
 
 class ProcessStep(ProcessStepBase, TimestampsMixin, table=True):
     """ProcessStep database model."""
@@ -182,6 +190,18 @@ class ProcessStepRunBase(SQLModel):
     run_id: int | None = Field(default=None, foreign_key="process_run.id")
     step_id: int | None = Field(default=None, foreign_key="process_step.id")
     step_index: int = Field(ge=0)
+
+    # Genkørsel funktionalitet for denne specifikke step run
+    can_rerun: bool = Field(
+        default=False, description="Whether this specific step run can be rerun"
+    )
+    rerun_config: dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=Column(JSON),
+        description="Configuration for how to rerun this specific step",
+    )
+    rerun_count: int = Field(default=0, description="Number of times this step has been rerun")
+    max_reruns: int = Field(default=3, description="Maximum number of reruns allowed")
 
 
 class ProcessStepRun(ProcessStepRunBase, TimestampsMixin, table=True):
