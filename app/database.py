@@ -15,7 +15,6 @@ def get_connection_url() -> str:
     if settings.DATABASE_URL:
         return settings.DATABASE_URL
 
-    # Build URL from components
     url = URL.create(
         drivername="mssql+pyodbc",
         username=settings.DATABASE_USER,
@@ -32,7 +31,6 @@ def get_connection_url() -> str:
     return str(url)
 
 
-# Create engine
 engine = create_engine(
     get_connection_url(),
     echo=settings.DEBUG,
@@ -53,5 +51,4 @@ def get_session() -> Generator[Session, None, None]:
         yield session
 
 
-# Type alias for dependency injection
 SessionDep = Annotated[Session, Depends(get_session)]
