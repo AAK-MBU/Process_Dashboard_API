@@ -23,10 +23,10 @@ class Settings(BaseSettings):
     # API settings
     API_V1_PREFIX: str = "/api/v1"
 
-    # Database settings - Option 1: Full connection string
+    # Database settings - Full connection string
     DATABASE_URL: str | None = Field(default=None, description="Full database connection URL")
 
-    # Database settings - Option 2: Individual components
+    # Database settings - Individual components
     DATABASE_HOST: str = Field(default="localhost")
     DATABASE_PORT: int = Field(default=1433)
     DATABASE_NAME: str = Field(default="process_visualization_db")

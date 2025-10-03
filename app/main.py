@@ -2,13 +2,15 @@
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.auth import verify_api_key
 from app.auth_router import router as auth_router
 from app.config import settings
 from app.database import create_db_and_tables
 from app.routers import (
+    router_api_keys,
     router_dashboard,
     router_process,
     router_runs,
@@ -20,12 +22,10 @@ from app.routers import (
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     """Application lifespan"""
-    # Startup: Create database and tables
     create_db_and_tables()
     yield
 
 
-# Create FastAPI app
 app = FastAPI(
     title=settings.APP_NAME,
     description=settings.APP_DESCRIPTION,
@@ -36,7 +36,6 @@ app = FastAPI(
     openapi_url="/openapi.json",
 )
 
-# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
@@ -45,16 +44,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
-app.include_router(auth_router, prefix=settings.API_V1_PREFIX)
-app.include_router(router_dashboard, prefix=settings.API_V1_PREFIX)
-app.include_router(router_process, prefix=settings.API_V1_PREFIX)
-app.include_router(router_runs, prefix=settings.API_V1_PREFIX)
-app.include_router(router_step_runs, prefix=settings.API_V1_PREFIX)
-app.include_router(router_steps, prefix=settings.API_V1_PREFIX)
+app.include_router(
+    router_dashboard, prefix=settings.API_V1_PREFIX, dependencies=[Depends(verify_api_key)]
+)
+app.include_router(
+    router_process, prefix=settings.API_V1_PREFIX, dependencies=[Depends(verify_api_key)]
+)
+app.include_router(
+    router_runs, prefix=settings.API_V1_PREFIX, dependencies=[Depends(verify_api_key)]
+)
+app.include_router(
+    router_steps, prefix=settings.API_V1_PREFIX, dependencies=[Depends(verify_api_key)]
+)
+app.include_router(
+    router_step_runs, prefix=settings.API_V1_PREFIX, dependencies=[Depends(verify_api_key)]
+)
+app.include_router(
+    auth_router, prefix=settings.API_V1_PREFIX, dependencies=[Depends(verify_api_key)]
+)
+app.include_router(router_api_keys, prefix=settings.API_V1_PREFIX)
 
 
-# Root endpoint - health check
 @app.get("/", tags=["health"], include_in_schema=False)
 async def root():
     """Health check endpoint"""
@@ -65,7 +75,6 @@ async def root():
     }
 
 
-# Health check endpoint
 @app.get("/health", tags=["health"])
 async def health_check():
     """Health check endpoint"""

@@ -27,7 +27,8 @@ ENV UV_LINK_MODE=copy
 COPY pyproject.toml .
 COPY uv.lock .
 COPY ./app /app/app
-COPY ./seed_data.py /app/seed_data.py
+COPY ./test/seed_data.py /app/seed_data.py
+COPY ./scripts /app/scripts
 
 # Install dependencies using uv
 RUN uv sync --frozen --no-dev
