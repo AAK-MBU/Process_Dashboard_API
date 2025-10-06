@@ -2,9 +2,9 @@
 
 from fastapi import APIRouter
 
-from app.auth import RequireApiKey
+from app.api.dependencies import RequireApiKey
 
-router = APIRouter(prefix="/auth", tags=["authentication"])
+router = APIRouter()
 
 
 @router.get(
