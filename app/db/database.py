@@ -7,7 +7,7 @@ from fastapi import Depends
 from sqlalchemy import URL
 from sqlmodel import Session, SQLModel, create_engine
 
-from .config import settings
+from app.core.config import settings
 
 
 def get_connection_url() -> str:

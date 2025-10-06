@@ -2,21 +2,20 @@
 
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
-from app.auth import verify_api_key
-from app.auth_router import router as auth_router
-from app.config import settings
-from app.database import create_db_and_tables
-from app.routers import (
-    router_api_keys,
-    router_dashboard,
-    router_process,
-    router_runs,
-    router_step_runs,
-    router_steps,
+from app.api.dependencies import verify_api_key
+from app.api.v1 import api_router
+from app.core import settings
+from app.core.exceptions import (
+    AuthenticationError,
+    AuthorizationError,
+    ResourceNotFoundError,
+    StepRunError,
 )
+from app.db.database import create_db_and_tables
 
 
 @asynccontextmanager
@@ -34,6 +33,9 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
+    swagger_ui_parameters={
+        "persistAuthorization": True,
+    },
 )
 
 app.add_middleware(
@@ -45,26 +47,55 @@ app.add_middleware(
 )
 
 app.include_router(
-    router_dashboard, prefix=settings.API_V1_PREFIX, dependencies=[Depends(verify_api_key)]
+    api_router,
+    prefix=settings.API_V1_PREFIX,
+    dependencies=[Depends(verify_api_key)],
 )
-app.include_router(
-    router_process, prefix=settings.API_V1_PREFIX, dependencies=[Depends(verify_api_key)]
-)
-app.include_router(
-    router_runs, prefix=settings.API_V1_PREFIX, dependencies=[Depends(verify_api_key)]
-)
-app.include_router(
-    router_steps, prefix=settings.API_V1_PREFIX, dependencies=[Depends(verify_api_key)]
-)
-app.include_router(
-    router_step_runs, prefix=settings.API_V1_PREFIX, dependencies=[Depends(verify_api_key)]
-)
-app.include_router(
-    auth_router, prefix=settings.API_V1_PREFIX, dependencies=[Depends(verify_api_key)]
-)
-app.include_router(router_api_keys, prefix=settings.API_V1_PREFIX)
 
 
+# Exception handlers
+@app.exception_handler(ResourceNotFoundError)
+async def resource_not_found_handler(request: Request, exc: ResourceNotFoundError) -> JSONResponse:
+    """Handle resource not found errors."""
+    return JSONResponse(
+        status_code=status.HTTP_404_NOT_FOUND,
+        content={
+            "detail": exc.message,
+            "resource_type": exc.resource_type,
+            "resource_id": str(exc.resource_id),
+        },
+    )
+
+
+@app.exception_handler(AuthenticationError)
+async def authentication_error_handler(request: Request, exc: AuthenticationError) -> JSONResponse:
+    """Handle authentication errors."""
+    return JSONResponse(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        content={"detail": str(exc)},
+        headers={"WWW-Authenticate": "ApiKey"},
+    )
+
+
+@app.exception_handler(AuthorizationError)
+async def authorization_error_handler(request: Request, exc: AuthorizationError) -> JSONResponse:
+    """Handle authorization errors."""
+    return JSONResponse(
+        status_code=status.HTTP_403_FORBIDDEN,
+        content={"detail": str(exc)},
+    )
+
+
+@app.exception_handler(StepRunError)
+async def step_run_error_handler(request: Request, exc: StepRunError) -> JSONResponse:
+    """Handle step run errors."""
+    return JSONResponse(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        content={"detail": str(exc)},
+    )
+
+
+# Health check endpoints
 @app.get("/", tags=["health"], include_in_schema=False)
 async def root():
     """Health check endpoint"""

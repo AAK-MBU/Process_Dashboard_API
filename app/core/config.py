@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     # Application settings
     APP_NAME: str = "Process Dashboard API"
     APP_VERSION: str = "1.0.0"
-    APP_DESCRIPTION: str = "API for process visualization"
+    APP_DESCRIPTION: str = "API for process dashboard and monitoring"
     DEBUG: bool = Field(default=False)
 
     # API settings
