@@ -1,0 +1,184 @@
+"""API enfrom app.models.models import (
+    Process,
+    ProcessCreate,
+    ProcessPublic,
+)
+
+router = APIRouter() for managing process definitions."""
+
+from typing import Any
+
+from fastapi import APIRouter, HTTPException, Query
+from sqlmodel import select
+
+from app.api.dependencies import RequireAdminKey
+from app.db.database import SessionDep
+from app.models import (
+    Process,
+    ProcessCreate,
+    ProcessPublic,
+)
+
+router = APIRouter(prefix="/processes", tags=["processes"])
+
+
+@router.post(
+    "/",
+    response_model=ProcessPublic,
+    status_code=201,
+    summary="Create a new process",
+    description="Create a new process definition with metadata",
+)
+def create_process(
+    *, session: SessionDep, process_in: ProcessCreate, admin_key: RequireAdminKey
+) -> Process:
+    """Create a new process."""
+    process = Process.model_validate(process_in)
+    session.add(process)
+    session.commit()
+    session.refresh(process)
+    return process
+
+
+@router.get(
+    "/",
+    response_model=list[ProcessPublic],
+    summary="List all processes",
+    description="Retrieve a list of all process definitions",
+)
+def list_processes(
+    session: SessionDep,
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
+) -> list[Process]:
+    """List all processes with pagination."""
+    statement = select(Process).order_by("id").offset(skip).limit(limit)
+    processes = session.exec(statement).all()
+    return list(processes)
+
+
+@router.get(
+    "/{process_id}",
+    response_model=ProcessPublic,
+    summary="Get process by ID",
+    description="Retrieve a specific process definition including its steps",
+)
+def get_process(*, session: SessionDep, process_id: int) -> Process:
+    """Get a specific process by ID."""
+    process = session.get(Process, process_id)
+    if not process:
+        raise HTTPException(status_code=404, detail="Process not found")
+    return process
+
+
+@router.get(
+    "/{process_id}/searchable-fields",
+    summary="Get all searchable fields for process runs",
+    description="Get complete overview of all searchable/sortable fields",
+)
+def get_process_searchable_fields(*, session: SessionDep, process_id: int) -> dict[str, Any]:
+    """Get all searchable fields for a process."""
+    process = session.get(Process, process_id)
+    if not process:
+        raise HTTPException(status_code=404, detail="Process not found")
+
+    # Standard fields that are always available
+    standard_fields = {
+        "id": {
+            "type": "integer",
+            "description": "Process run ID",
+            "sortable": True,
+            "filterable": False,
+        },
+        "entity_id": {
+            "type": "string",
+            "description": "Entity identifier (e.g., CPR, case number)",
+            "sortable": True,
+            "filterable": True,
+        },
+        "entity_name": {
+            "type": "string",
+            "description": "Entity name (e.g., person name)",
+            "sortable": True,
+            "filterable": True,
+        },
+        "status": {
+            "type": "enum",
+            "description": "Process run status",
+            "values": ["pending", "running", "completed", "failed"],
+            "sortable": True,
+            "filterable": True,
+        },
+        "started_at": {
+            "type": "datetime",
+            "description": "When the process run started",
+            "sortable": True,
+            "filterable": True,
+            "filter_types": ["after", "before"],
+        },
+        "finished_at": {
+            "type": "datetime",
+            "description": "When the process run finished",
+            "sortable": True,
+            "filterable": True,
+            "filter_types": ["after", "before"],
+        },
+        "created_at": {
+            "type": "datetime",
+            "description": "When the record was created",
+            "sortable": True,
+            "filterable": False,
+        },
+        "updated_at": {
+            "type": "datetime",
+            "description": "When the record was last updated",
+            "sortable": True,
+            "filterable": False,
+        },
+    }
+
+    # Get metadata schema from process definition
+    metadata_schema = process.meta.get("run_metadata_schema", {})
+
+    # Get actual metadata fields from data - use schema as fallback
+    try:
+        # Simple approach: use the schema fields for now
+        actual_metadata_fields = list(metadata_schema.keys())
+    except Exception:
+        actual_metadata_fields = []
+
+    # Build metadata fields info
+    metadata_fields = {}
+    for field in actual_metadata_fields:
+        field_info = {
+            "type": metadata_schema.get(field, "string"),
+            "description": f"Metadata field: {field}",
+            "sortable": True,
+            "filterable": True,
+            "sortable_as": f"meta.{field}",
+            "filter_format": "meta_filter parameter: field:value",
+        }
+        metadata_fields[field] = field_info
+
+    return {
+        "process_id": process_id,
+        "process_name": process.name,
+        "standard_fields": standard_fields,
+        "metadata_fields": metadata_fields,
+        "all_sortable_fields": list(standard_fields.keys())
+        + [f"meta.{field}" for field in metadata_fields.keys()],
+        "all_filterable_fields": [
+            field for field, info in standard_fields.items() if info.get("filterable", False)
+        ]
+        + [f"meta.{field}" for field in metadata_fields.keys()],
+        "field_count": {
+            "standard": len(standard_fields),
+            "metadata": len(metadata_fields),
+            "total": len(standard_fields) + len(metadata_fields),
+        },
+        "filtering_help": {
+            "metadata": "Use meta_filter parameter with format 'field:value' or 'field1:value1,field2:value2'",
+            "dates": "Use ISO format for date filters (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)",
+            "partial_match": "entity_name supports partial matching",
+        },
+    }
