@@ -28,6 +28,11 @@ class ProcessRunBase(SQLModel):
     started_at: datetime | None = Field(default=None)
     finished_at: datetime | None = Field(default=None)
     process_id: int | None = Field(default=None, foreign_key="process.id")
+    is_neutralized: bool = Field(
+        default=False,
+        index=True,
+        description="Om personfølsomme data er slettet",
+    )
 
 
 class ProcessRun(ProcessRunBase, TimestampsMixin, table=True):
@@ -36,6 +41,17 @@ class ProcessRun(ProcessRunBase, TimestampsMixin, table=True):
     __tablename__ = "process_run"
 
     id: int | None = Field(default=None, primary_key=True)
+    deleted_at: datetime | None = Field(
+        default=None, index=True, description="Soft delete timestamp"
+    )
+    scheduled_deletion_at: datetime | None = Field(
+        default=None,
+        index=True,
+        description=(
+            "Beregnet tidspunkt hvor personfølsomme data skal "
+            "neutraliseres baseret på retention_months"
+        ),
+    )
 
     steps: list["ProcessStepRun"] = Relationship(
         back_populates="run",
@@ -78,6 +94,6 @@ class ProcessRunPublic(ProcessRunBase):
     """Public schema for ProcessRun with relationships."""
 
     id: int
-    meta: dict[str, Any]
-    status: ProcessRunStatus
+    meta: dict[str, Any] = Field(default_factory=dict)
+    status: ProcessRunStatus = ProcessRunStatus.PENDING
     steps: list["ProcessStepRunPublic"] = []

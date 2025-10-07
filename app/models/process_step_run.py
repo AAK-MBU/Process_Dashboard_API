@@ -43,6 +43,9 @@ class ProcessStepRun(ProcessStepRunBase, TimestampsMixin, table=True):
     __tablename__ = "process_step_run"
 
     id: int | None = Field(default=None, primary_key=True)
+    deleted_at: datetime | None = Field(
+        default=None, index=True, description="Soft delete timestamp"
+    )
 
     run: Optional["ProcessRun"] = Relationship(back_populates="steps")
     step: Optional["ProcessStep"] = Relationship()

@@ -1,23 +1,14 @@
-"""API enfrom app.models.models import (
-    Process,
-    ProcessCreate,
-    ProcessPublic,
-)
-
-router = APIRouter() for managing process definitions."""
+"""API endpoints for managing process definitions."""
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, status
 from sqlmodel import select
 
 from app.api.dependencies import RequireAdminKey
 from app.db.database import SessionDep
-from app.models import (
-    Process,
-    ProcessCreate,
-    ProcessPublic,
-)
+from app.models import Process, ProcessCreate, ProcessPublic, RetentionUpdate
+from app.services import ProcessService
 
 router = APIRouter(prefix="/processes", tags=["processes"])
 
@@ -182,3 +173,58 @@ def get_process_searchable_fields(*, session: SessionDep, process_id: int) -> di
             "partial_match": "entity_name supports partial matching",
         },
     }
+
+
+@router.delete(
+    "/{process_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Soft delete a process",
+    description="Soft delete a process and its steps (runs are not affected)",
+)
+def delete_process(*, session: SessionDep, process_id: int, admin_key: RequireAdminKey) -> None:
+    """Soft delete a process."""
+    service = ProcessService(session)
+    try:
+        service.delete_process(process_id)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+@router.post(
+    "/{process_id}/restore",
+    response_model=ProcessPublic,
+    summary="Restore a soft-deleted process",
+    description="Restore a previously soft-deleted process and its steps",
+)
+def restore_process(*, session: SessionDep, process_id: int, admin_key: RequireAdminKey) -> Process:
+    """Restore a soft-deleted process."""
+    service = ProcessService(session)
+    try:
+        return service.restore_process(process_id)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+@router.put(
+    "/{process_id}/retention",
+    response_model=ProcessPublic,
+    summary="Update retention period",
+    description=(
+        "Update the retention period for a process. "
+        "This determines how long before runs are neutralized. "
+        "Set to null for no automatic neutralization."
+    ),
+)
+def update_retention(
+    *,
+    session: SessionDep,
+    process_id: int,
+    retention: RetentionUpdate,
+    admin_key: RequireAdminKey,
+) -> Process:
+    """Update retention period for a process."""
+    service = ProcessService(session)
+    try:
+        return service.update_retention_period(process_id, retention.retention_months)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e

@@ -1,5 +1,6 @@
 """Process models."""
 
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import JSON
@@ -18,6 +19,12 @@ class ProcessBase(SQLModel):
 
     name: str = Field(index=True, max_length=255)
     meta: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    retention_months: int | None = Field(
+        default=None,
+        description=(
+            "Antal måneder før process runs skal slettes. Hvis None, slettes de aldrig automatisk."
+        ),
+    )
 
 
 class Process(ProcessBase, TimestampsMixin, table=True):
@@ -26,6 +33,9 @@ class Process(ProcessBase, TimestampsMixin, table=True):
     __tablename__ = "process"
 
     id: int | None = Field(default=None, primary_key=True)
+    deleted_at: datetime | None = Field(
+        default=None, index=True, description="Soft delete timestamp"
+    )
 
     steps: list["ProcessStep"] = Relationship(
         back_populates="process",
@@ -42,5 +52,5 @@ class ProcessPublic(ProcessBase):
     """Public schema for Process with relationships."""
 
     id: int
-    meta: dict[str, Any]
+    meta: dict[str, Any] = Field(default_factory=dict)
     steps: list["ProcessStepPublic"] = []
