@@ -3,32 +3,17 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: process-visualization-api
+    container_name: process-dashboard-api
     env_file:
       - .env
-    expose:
-      - "8000"
     restart: unless-stopped
     volumes:
       - ./app:/app/app
     networks:
-      - process-network
-
-  nginx:
-    image: nginx:alpine
-    container_name: process-dashboard-nginx
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./ssl:/etc/nginx/ssl:ro
-    depends_on:
-      - api
-    restart: unless-stopped
-    networks:
-      - process-network
+      edge:
+        aliases:
+          - process-dashboard-api
 
 networks:
-  process-network:
-    driver: bridge
+  edge:
+    external: true
