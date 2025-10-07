@@ -1,5 +1,6 @@
 """ProcessStep models."""
 
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Optional
 
 from sqlalchemy import JSON
@@ -32,6 +33,9 @@ class ProcessStep(ProcessStepBase, TimestampsMixin, table=True):
     __tablename__ = "process_step"
 
     id: int | None = Field(default=None, primary_key=True)
+    deleted_at: datetime | None = Field(
+        default=None, index=True, description="Soft delete timestamp"
+    )
 
     process: Optional["Process"] = Relationship(back_populates="steps")
 

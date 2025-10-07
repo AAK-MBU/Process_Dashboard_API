@@ -1,5 +1,7 @@
 """Business logic for process runs."""
 
+from datetime import timedelta
+
 from sqlalchemy import text
 from sqlmodel import Session, select
 
@@ -10,6 +12,7 @@ from app.models import (
     ProcessRunCreate,
     ProcessStepRun,
 )
+from app.utils.datetime_utils import utc_now
 
 
 class ProcessRunService:
@@ -41,6 +44,13 @@ class ProcessRunService:
 
         # Create the run
         run = ProcessRun.model_validate(run_data)
+
+        # Calculate scheduled deletion based on process retention policy
+        if process.retention_months:
+            run.scheduled_deletion_at = run.created_at + timedelta(
+                days=30 * process.retention_months
+            )
+
         self.db.add(run)
         self.db.commit()
         self.db.refresh(run)
@@ -99,16 +109,30 @@ class ProcessRunService:
         sort_direction: str = "desc",
         skip: int = 0,
         limit: int = 100,
+        include_deleted: bool = False,
+        include_neutralized: bool = True,
     ) -> list[ProcessRun]:
         """
         List process runs with filtering and sorting.
+
+        Args:
+            include_deleted: If True, include soft-deleted runs
+            include_neutralized: If True, include neutralized runs
 
         Returns:
             List of ProcessRun objects matching filters
         """
         statement = select(ProcessRun)
 
-        # Apply filters
+        # Filter out soft-deleted runs unless explicitly requested
+        if not include_deleted:
+            statement = statement.where(ProcessRun.deleted_at.is_(None))
+
+        # Filter out neutralized runs if requested
+        if not include_neutralized:
+            statement = statement.where(ProcessRun.is_neutralized == False)  # noqa
+
+        # Apply other filters
         statement = self._apply_basic_filters(statement, process_id, entity_id, entity_name, status)
         statement = self._apply_date_filters(
             statement, started_after, started_before, finished_after, finished_before

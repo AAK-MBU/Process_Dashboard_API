@@ -6,6 +6,7 @@ from sqlmodel import Session, select
 
 from app.core.exceptions import ProcessNotFoundError
 from app.models import Process, ProcessCreate
+from app.utils.datetime_utils import utc_now
 
 
 class ProcessService:
@@ -30,12 +31,13 @@ class ProcessService:
         self.db.refresh(process)
         return process
 
-    def get_process(self, process_id: int) -> Process:
+    def get_process(self, process_id: int, include_deleted: bool = False) -> Process:
         """
         Get a process by ID.
 
         Args:
             process_id: ID of the process to retrieve
+            include_deleted: If True, include soft-deleted processes
 
         Returns:
             Process object
@@ -46,20 +48,34 @@ class ProcessService:
         process = self.db.get(Process, process_id)
         if not process:
             raise ProcessNotFoundError(process_id)
+
+        # Check if process is soft-deleted
+        if not include_deleted and process.deleted_at is not None:
+            raise ProcessNotFoundError(process_id)
+
         return process
 
-    def list_processes(self, skip: int = 0, limit: int = 100) -> list[Process]:
+    def list_processes(
+        self, skip: int = 0, limit: int = 100, include_deleted: bool = False
+    ) -> list[Process]:
         """
         List all processes with pagination.
 
         Args:
             skip: Number of records to skip
             limit: Maximum number of records to return
+            include_deleted: If True, include soft-deleted processes
 
         Returns:
             List of Process objects
         """
-        statement = select(Process).order_by(Process.id).offset(skip).limit(limit)
+        statement = select(Process)
+
+        # Filter out soft-deleted processes unless explicitly requested
+        if not include_deleted:
+            statement = statement.where(Process.deleted_at.is_(None))
+
+        statement = statement.order_by(Process.id).offset(skip).limit(limit)
         processes = self.db.exec(statement).all()
         return list(processes)
 
@@ -211,7 +227,10 @@ class ProcessService:
 
     def delete_process(self, process_id: int) -> None:
         """
-        Delete a process definition.
+        Soft delete a process definition and its steps.
+
+        This marks the process and all its steps as deleted without
+        removing them from the database. Runs are not affected.
 
         Args:
             process_id: ID of the process to delete
@@ -220,5 +239,67 @@ class ProcessService:
             ProcessNotFoundError: If process doesn't exist
         """
         process = self.get_process(process_id)
-        self.db.delete(process)
+        now = utc_now()
+
+        # Soft delete the process
+        process.deleted_at = now
+
+        # Soft delete all steps
+        for step in process.steps:
+            step.deleted_at = now
+            self.db.add(step)
+
+        self.db.add(process)
         self.db.commit()
+
+    def restore_process(self, process_id: int) -> Process:
+        """
+        Restore a soft-deleted process and its steps.
+
+        Args:
+            process_id: ID of the process to restore
+
+        Returns:
+            Restored Process object
+
+        Raises:
+            ProcessNotFoundError: If process doesn't exist
+        """
+        process = self.get_process(process_id, include_deleted=True)
+
+        # Restore the process
+        process.deleted_at = None
+
+        # Restore all steps
+        for step in process.steps:
+            step.deleted_at = None
+            self.db.add(step)
+
+        self.db.add(process)
+        self.db.commit()
+        self.db.refresh(process)
+
+        return process
+
+    def update_retention_period(self, process_id: int, retention_months: int | None) -> Process:
+        """
+        Update retention period for a process.
+
+        Args:
+            process_id: ID of the process to update
+            retention_months: Retention period in months, or None for no limit
+
+        Returns:
+            Updated Process object
+
+        Raises:
+            ProcessNotFoundError: If process doesn't exist
+        """
+        process = self.get_process(process_id)
+        process.retention_months = retention_months
+
+        self.db.add(process)
+        self.db.commit()
+        self.db.refresh(process)
+
+        return process

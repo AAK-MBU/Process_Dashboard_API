@@ -29,6 +29,12 @@ from app.models.process_step_run import (
     ProcessStepRunPublic,
     ProcessStepRunUpdate,
 )
+from app.models.retention import (
+    CleanupResult,
+    CleanupStats,
+    NeutralizationResult,
+    RetentionUpdate,
+)
 
 __all__ = [
     # Enums
@@ -63,6 +69,11 @@ __all__ = [
     "ApiKeyCreate",
     "ApiKeyPublic",
     "ApiKeyWithSecret",
+    # Retention
+    "NeutralizationResult",
+    "RetentionUpdate",
+    "CleanupResult",
+    "CleanupStats",
 ]
 
 # Rebuild models to resolve forward references
