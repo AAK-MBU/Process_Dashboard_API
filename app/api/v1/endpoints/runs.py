@@ -1,16 +1,13 @@
 """API endpoints for managing process runs."""
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import text
 from sqlmodel import select
 
 from app.api.dependencies import RequireAdminKey, RunServiceDep
 from app.db.database import SessionDep
-from app.models import (
-    ProcessRun,
-    ProcessRunCreate,
-    ProcessRunPublic,
-)
+from app.models import NeutralizationResult, ProcessRun, ProcessRunCreate, ProcessRunPublic
+from app.services import DataRetentionService
 
 router = APIRouter()
 
@@ -159,3 +156,68 @@ def get_process_run(*, session: SessionDep, run_id: int) -> ProcessRun:
     if not run:
         raise HTTPException(status_code=404, detail="Process run not found")
     return run
+
+
+@router.delete(
+    "/{run_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Soft delete a run",
+    description="Soft delete a process run and all its step runs",
+)
+def delete_run(*, session: SessionDep, run_id: int, admin_key: RequireAdminKey) -> None:
+    """Soft delete a process run."""
+    run = session.get(ProcessRun, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Process run not found")
+
+    retention_service = DataRetentionService(session)
+    retention_service.soft_delete_run(run)
+
+
+@router.post(
+    "/{run_id}/restore",
+    response_model=ProcessRunPublic,
+    summary="Restore a soft-deleted run",
+    description="Restore a previously soft-deleted run and its step runs",
+)
+def restore_run(*, session: SessionDep, run_id: int, admin_key: RequireAdminKey) -> ProcessRun:
+    """Restore a soft-deleted run."""
+    run = session.get(ProcessRun, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Process run not found")
+
+    retention_service = DataRetentionService(session)
+    return retention_service.restore_run(run)
+
+
+@router.post(
+    "/{run_id}/neutralize",
+    response_model=NeutralizationResult,
+    summary="Neutralize sensitive data",
+    description=(
+        "Manually neutralize personally identifiable information in a run. "
+        "This removes entity_id, entity_name, and sensitive metadata "
+        "while keeping the run record for statistics."
+    ),
+)
+def neutralize_run(
+    *, session: SessionDep, run_id: int, admin_key: RequireAdminKey
+) -> NeutralizationResult:
+    """Neutralize sensitive data in a process run."""
+    run = session.get(ProcessRun, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Process run not found")
+
+    was_neutralized = run.is_neutralized
+
+    retention_service = DataRetentionService(session)
+    retention_service.neutralize_run_data(run)
+
+    return NeutralizationResult(
+        run_id=run_id,
+        was_already_neutralized=was_neutralized,
+        success=True,
+        message=(
+            "Run was already neutralized" if was_neutralized else "Run successfully neutralized"
+        ),
+    )
