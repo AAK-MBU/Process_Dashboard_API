@@ -1,6 +1,7 @@
 """API v1 endpoint routers."""
 
 from app.api.v1.endpoints import (
+    admin,
     api_keys,
     auth,
     overview,
@@ -11,6 +12,7 @@ from app.api.v1.endpoints import (
 )
 
 __all__ = [
+    "admin",
     "api_keys",
     "auth",
     "overview",

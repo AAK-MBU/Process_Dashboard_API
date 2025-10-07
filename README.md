@@ -19,6 +19,7 @@ The Process Dashboard API provides a platform for:
 - **Real-time Process Monitoring** - Track business process execution across multiple systems
 - **Retry Management** - Automated failure recovery with configurable retry strategies  
 - **Security** - Role-based API authentication with audit trails
+- **Data Retention** - Configurable retention policies with GDPR-compliant data neutralization
 - **Features** - Advanced filtering, search, and dashboard capabilities
 
 ## **System Architecture**
@@ -82,7 +83,16 @@ graph TD
    docker-compose up -d
    ```
 
-3. **Initialize Security**
+3. **Run Database Migrations** (if upgrading from older version)
+   ```bash
+   # Connect to your SQL Server and run migration scripts
+   sqlcmd -S your-server -d process_monitor -i scripts/migrations/001_add_soft_delete_and_retention.sql
+   
+   # Or use Azure Data Studio / SQL Server Management Studio
+   # See scripts/migrations/README.md for details
+   ```
+
+4. **Initialize Security**
    ```bash
    # Create admin API key
    docker exec process-visualization-api uv run python scripts/add_api_key_roles.py
@@ -90,7 +100,7 @@ graph TD
    # Note the returned admin key for initial setup
    ```
 
-4. **Verify Installation**
+5. **Verify Installation**
    ```bash
    curl -H "Authorization: Bearer YOUR_ADMIN_KEY" \
         http://localhost:8000/api/v1/auth/verify
@@ -191,6 +201,169 @@ Authorization: Bearer {API_KEY}
 ```http
 GET /api/v1/auth/me
 Authorization: Bearer {API_KEY}
+```
+
+---
+
+## **Data Retention & Privacy Management**
+
+### **Overview**
+
+The API implements comprehensive data retention and privacy management capabilities to support GDPR compliance and data lifecycle management.
+
+### **Key Features**
+
+- **Soft Delete** - Recoverable deletion with retention periods
+- **Configurable Retention** - Set custom retention periods per process (e.g., 6, 12, 48 months)
+- **Automatic Neutralization** - Scheduled removal of personally identifiable information (PII)
+- **Audit Trail** - Complete tracking of all deletion and neutralization operations
+
+### **Retention Policy Management**
+
+#### **Set Retention Period for Process**
+```http
+PUT /api/v1/processes/{process_id}/retention
+Authorization: Bearer {ADMIN_KEY}
+Content-Type: application/json
+
+{
+  "retention_months": 12
+}
+```
+
+**Common Retention Periods:**
+- `6` - 6 months (short-term operational data)
+- `12` - 1 year (standard business processes)
+- `48` - 4 years (regulatory compliance requirements)
+- `null` - No automatic retention (manual cleanup only)
+
+#### **Soft Delete Process**
+```http
+DELETE /api/v1/processes/{process_id}
+Authorization: Bearer {ADMIN_KEY}
+```
+
+**Behavior:**
+- Process marked as deleted (not permanently removed)
+- All associated runs and steps marked as deleted
+- Data remains recoverable until retention period expires
+
+#### **Restore Deleted Process**
+```http
+POST /api/v1/processes/{process_id}/restore
+Authorization: Bearer {ADMIN_KEY}
+```
+
+#### **Soft Delete Process Run**
+```http
+DELETE /api/v1/runs/{run_id}
+Authorization: Bearer {ADMIN_KEY}
+```
+
+#### **Restore Deleted Run**
+```http
+POST /api/v1/runs/{run_id}/restore
+Authorization: Bearer {ADMIN_KEY}
+```
+
+### **Data Neutralization**
+
+#### **Neutralize Run Data** (Remove PII)
+```http
+POST /api/v1/runs/{run_id}/neutralize
+Authorization: Bearer {ADMIN_KEY}
+```
+
+**Neutralization Process:**
+1. `entity_id` - Replaced with "NEUTRALIZED_{run_id}"
+2. `entity_name` - Set to null
+3. `meta` - Sensitive fields removed from JSON metadata
+4. `is_neutralized` - Flag set to true (irreversible)
+
+**Example Before:**
+```json
+{
+  "entity_id": "12345678-1234",
+  "entity_name": "John Doe",
+  "meta": {
+    "email": "john.doe@example.com",
+    "phone": "+45 12 34 56 78",
+    "address": "Main Street 123"
+  }
+}
+```
+
+**Example After:**
+```json
+{
+  "entity_id": "NEUTRALIZED_42",
+  "entity_name": null,
+  "meta": {
+    "department": "Sales",
+    "region": "EMEA"
+  },
+  "is_neutralized": true
+}
+```
+
+### **Administrative Cleanup**
+
+#### **Get Cleanup Statistics**
+```http
+GET /api/v1/admin/cleanup/stats?limit=10
+Authorization: Bearer {ADMIN_KEY}
+```
+
+**Response:**
+```json
+{
+  "total_due_for_neutralization": 150,
+  "sample_run_ids": [42, 43, 44, 45, 46, 47, 48, 49, 50, 51]
+}
+```
+
+#### **Trigger Batch Neutralization**
+```http
+POST /api/v1/admin/cleanup/neutralize?limit=100&dry_run=false
+Authorization: Bearer {ADMIN_KEY}
+```
+
+**Parameters:**
+- `limit` - Maximum number of runs to process (default: 100, max: 1000)
+- `dry_run` - Preview only without making changes (default: true)
+
+**Response:**
+```json
+{
+  "neutralized_count": 87,
+  "failed_count": 0,
+  "neutralized_run_ids": [42, 43, 44, ...],
+  "failed_run_ids": []
+}
+```
+
+### **Retention Workflow**
+
+```
+Process Run Created
+        │
+        ▼
+[scheduled_deletion_at = created_at + retention_months]
+        │
+        ▼
+    Time Passes
+        │
+        ▼
+[scheduled_deletion_at reached]
+        │
+        ▼
+Admin Triggers Cleanup
+        │
+        ▼
+[PII Neutralized - Irreversible]
+        │
+        ▼
+[Run retained for statistical/audit purposes]
 ```
 
 ---
@@ -739,12 +912,51 @@ Authorization: Bearer {API_KEY}
 
 ---
 
+## **Version Management**
+
+### **Current Version**
+
+The project uses semantic versioning (MAJOR.MINOR.PATCH) with centralized version management.
+
+**Version Location:** `pyproject.toml` (single source of truth)
+
+### **Update Version**
+
+Use the Python script to update version across all project files:
+
+```bash
+# Bump patch version (1.0.0 -> 1.0.1)
+python scripts/update_version.py patch
+
+# Bump minor version (1.0.0 -> 1.1.0)
+python scripts/update_version.py minor
+
+# Bump major version (1.0.0 -> 2.0.0)
+python scripts/update_version.py major
+
+# Set specific version
+python scripts/update_version.py 2.1.0
+```
+
+**Updated Files:**
+- `pyproject.toml` - Project metadata
+- `.env.example` - Environment template
+- `Dockerfile` - Container configuration
+- `documentation/api_reference.md` - API documentation
+
+**Complete Guide:** See `scripts/VERSION_MANAGEMENT.md` for detailed documentation.
+
+---
+
 ## **Support & Resources**
 
 ### **Documentation Links**
 - **API Reference**: [Interactive Docs](http://localhost:8000/docs)
 - **Architecture Guide**: [System Design](./documentation/datamodel_diagram.md)
 - **Visualization Examples**: [Dashboard Examples](./documentation/example_visualization.md)
+- **Data Retention Guide**: [Step Run Functionality](./documentation/step_rerun_functionality.md)
+- **Version Management**: [Version Management Guide](./scripts/VERSION_MANAGEMENT.md)
+- **Database Migrations**: [Migration Scripts](./scripts/migrations/README.md)
 
 ### **Development Resources**
 - **FastAPI Documentation**: https://fastapi.tiangolo.com/
