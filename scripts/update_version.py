@@ -6,6 +6,7 @@ Version is managed in pyproject.toml as single source of truth.
 """
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -48,6 +49,27 @@ def update_version(new_version: str) -> None:
     print("Updated files:")
     for file in files_updated:
         print(f"  ✓ {file}")
+
+    # Run uv lock to update the lock file
+    print("\nUpdating uv.lock...")
+    try:
+        result = subprocess.run(
+            ["uv", "lock"],
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        print("  ✓ uv.lock updated successfully")
+        if result.stdout:
+            print(f"\n{result.stdout}")
+    except subprocess.CalledProcessError as e:
+        print(f"  ✗ Failed to update uv.lock: {e}")
+        print(f"    Error output: {e.stderr}")
+        print("\nPlease run 'uv lock' manually")
+    except FileNotFoundError:
+        print("  ✗ 'uv' command not found")
+        print("\nPlease run 'uv lock' manually")
 
     print("\nNote: Check and update .env manually if needed")
     print("Current .env has version that may differ from code")

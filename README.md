@@ -20,6 +20,7 @@ The Process Dashboard API provides a platform for:
 - **Retry Management** - Automated failure recovery with configurable retry strategies  
 - **Security** - Role-based API authentication with audit trails
 - **Data Retention** - Configurable retention policies with GDPR-compliant data neutralization
+- **Pagination** - Standardized pagination with RFC 8288 Link headers
 - **Features** - Advanced filtering, search, and dashboard capabilities
 
 ## **System Architecture**
@@ -42,6 +43,7 @@ The Process Dashboard API provides a platform for:
 | **Data Layer** | SQLModel + SQLAlchemy | Type-safe ORM with automatic validation |
 | **Database** | Microsoft SQL Server | Enterprise-grade persistence layer |
 | **Authentication** | Custom JWT + API Keys | Multi-tier security with role-based access |
+| **Pagination** | fastapi-pagination | RFC 8288 compliant pagination with Link headers |
 | **Deployment** | Docker + Compose | Containerized deployment and scaling |
 | **Package Management** | UV | Fast Python dependency resolution |
 
@@ -102,7 +104,7 @@ graph TD
 
 5. **Verify Installation**
    ```bash
-   curl -H "Authorization: Bearer YOUR_ADMIN_KEY" \
+   curl -H "X-API-Key: YOUR_ADMIN_KEY" \
         http://localhost:8000/api/v1/auth/verify
    ```
 
@@ -111,10 +113,8 @@ graph TD
 ```bash
 # .env file example
 DATABASE_URL=mssql+pyodbc://username:password@server/database?driver=ODBC+Driver+18+for+SQL+Server
-SECRET_KEY=your-super-secret-key-here
-API_HOST=0.0.0.0
-API_PORT=8000
 DEBUG=false
+CORS_ORIGINS='["http://localhost:3000","http://localhost:8080"]'
 ```
 
 ---
@@ -135,7 +135,7 @@ The API implements a two-tier role-based access control system:
 #### **Create API Key** (Administrator Only)
 ```http
 POST /api/v1/api-keys/
-Authorization: Bearer {ADMIN_KEY}
+X-API-Key: {ADMIN_KEY}
 Content-Type: application/json
 
 {
@@ -164,13 +164,13 @@ Content-Type: application/json
 #### **List API Keys** (Administrator Only)
 ```http
 GET /api/v1/api-keys/
-Authorization: Bearer {ADMIN_KEY}
+X-API-Key: {ADMIN_KEY}
 ```
 
 #### **Revoke API Key** (Administrator Only)
 ```http
 DELETE /api/v1/api-keys/{key_id}
-Authorization: Bearer {ADMIN_KEY}
+X-API-Key: {ADMIN_KEY}
 ```
 
 ### **Authentication Endpoints**
@@ -178,7 +178,7 @@ Authorization: Bearer {ADMIN_KEY}
 #### **Verify API Key**
 ```http
 GET /api/v1/auth/verify
-Authorization: Bearer {API_KEY}
+X-API-Key: {API_KEY}
 ```
 
 **Response:**
@@ -200,7 +200,7 @@ Authorization: Bearer {API_KEY}
 #### **Get Current Key Details**
 ```http
 GET /api/v1/auth/me
-Authorization: Bearer {API_KEY}
+X-API-Key: {API_KEY}
 ```
 
 ---
@@ -213,7 +213,7 @@ The API implements comprehensive data retention and privacy management capabilit
 
 ### **Key Features**
 
-- **Soft Delete** - Recoverable deletion with retention periods
+- **Soft Delete** - Recoverable deletion with retention periods. Soft-deleted items are automatically hidden from all API responses.
 - **Configurable Retention** - Set custom retention periods per process (e.g., 6, 12, 48 months)
 - **Automatic Neutralization** - Scheduled removal of personally identifiable information (PII)
 - **Audit Trail** - Complete tracking of all deletion and neutralization operations
@@ -223,7 +223,7 @@ The API implements comprehensive data retention and privacy management capabilit
 #### **Set Retention Period for Process**
 ```http
 PUT /api/v1/processes/{process_id}/retention
-Authorization: Bearer {ADMIN_KEY}
+X-API-Key: {ADMIN_KEY}
 Content-Type: application/json
 
 {
@@ -240,30 +240,33 @@ Content-Type: application/json
 #### **Soft Delete Process**
 ```http
 DELETE /api/v1/processes/{process_id}
-Authorization: Bearer {ADMIN_KEY}
+X-API-Key: {ADMIN_KEY}
 ```
 
 **Behavior:**
 - Process marked as deleted (not permanently removed)
 - All associated runs and steps marked as deleted
+- Soft-deleted items are automatically hidden from all list endpoints and queries
+- Accessing a soft-deleted item by ID returns 404 (not found)
 - Data remains recoverable until retention period expires
+- Use the restore endpoint to make the process visible again
 
 #### **Restore Deleted Process**
 ```http
 POST /api/v1/processes/{process_id}/restore
-Authorization: Bearer {ADMIN_KEY}
+X-API-Key: {ADMIN_KEY}
 ```
 
 #### **Soft Delete Process Run**
 ```http
 DELETE /api/v1/runs/{run_id}
-Authorization: Bearer {ADMIN_KEY}
+X-API-Key: {ADMIN_KEY}
 ```
 
 #### **Restore Deleted Run**
 ```http
 POST /api/v1/runs/{run_id}/restore
-Authorization: Bearer {ADMIN_KEY}
+X-API-Key: {ADMIN_KEY}
 ```
 
 ### **Data Neutralization**
@@ -271,7 +274,7 @@ Authorization: Bearer {ADMIN_KEY}
 #### **Neutralize Run Data** (Remove PII)
 ```http
 POST /api/v1/runs/{run_id}/neutralize
-Authorization: Bearer {ADMIN_KEY}
+X-API-Key: {ADMIN_KEY}
 ```
 
 **Neutralization Process:**
@@ -311,7 +314,7 @@ Authorization: Bearer {ADMIN_KEY}
 #### **Get Cleanup Statistics**
 ```http
 GET /api/v1/admin/cleanup/stats?limit=10
-Authorization: Bearer {ADMIN_KEY}
+X-API-Key: {ADMIN_KEY}
 ```
 
 **Response:**
@@ -325,7 +328,7 @@ Authorization: Bearer {ADMIN_KEY}
 #### **Trigger Batch Neutralization**
 ```http
 POST /api/v1/admin/cleanup/neutralize?limit=100&dry_run=false
-Authorization: Bearer {ADMIN_KEY}
+X-API-Key: {ADMIN_KEY}
 ```
 
 **Parameters:**
@@ -375,16 +378,52 @@ Admin Triggers Cleanup
 #### **List Processes**
 ```http
 GET /api/v1/processes/
-Authorization: Bearer {API_KEY}
+X-API-Key: {API_KEY}
 
-# Query Parameters
-?limit=50&offset=0
+# Pagination Parameters
+?page=1&size=50
 ```
+
+**Response:**
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "name": "Customer Onboarding",
+      "meta": {...},
+      "created_at": "2025-10-03T10:00:00Z",
+      "updated_at": "2025-10-03T10:00:00Z"
+    }
+  ],
+  "total": 150,
+  "page": 1,
+  "size": 50,
+  "pages": 3
+}
+```
+
+**Response Headers:**
+```
+Link: <http://api/v1/processes/?page=1&size=50>; rel="first", 
+      <http://api/v1/processes/?page=3&size=50>; rel="last",
+      <http://api/v1/processes/?page=2&size=50>; rel="next"
+X-Total-Count: 150
+X-Page: 1
+X-Page-Size: 50
+X-Total-Pages: 3
+```
+
+**Pagination Parameters:**
+- `page` - Page number (default: 1, minimum: 1)
+- `size` - Items per page (default: 50, maximum: 100)
+
+**Note:** Only returns active (non-deleted) processes. Soft-deleted processes are automatically excluded.
 
 #### **Create Process**
 ```http
 POST /api/v1/processes/
-Authorization: Bearer {API_KEY}
+X-API-Key: {API_KEY}
 Content-Type: application/json
 
 {
@@ -401,7 +440,7 @@ Content-Type: application/json
 #### **Get Process Details**
 ```http
 GET /api/v1/processes/{process_id}
-Authorization: Bearer {API_KEY}
+X-API-Key: {API_KEY}
 ```
 
 ### **Process Execution Management**
@@ -409,7 +448,7 @@ Authorization: Bearer {API_KEY}
 #### **Start Process Execution**
 ```http
 POST /api/v1/runs/
-Authorization: Bearer {API_KEY}
+X-API-Key: {API_KEY}
 Content-Type: application/json
 
 {
@@ -428,22 +467,64 @@ Content-Type: application/json
 #### **Query Process Runs**
 ```http
 GET /api/v1/runs/
-Authorization: Bearer {API_KEY}
+X-API-Key: {API_KEY}
 
-# Advanced Filtering
+# Advanced Filtering with Pagination
 ?entity_name=Acme
 &status=completed
 &created_after=2025-10-01T00:00:00Z
 &created_before=2025-10-31T23:59:59Z
 &meta_filter=priority:high,environment:production
-&limit=100
-&offset=0
+&order_by=created_at
+&sort_direction=desc
+&page=1
+&size=50
 ```
+
+**Response:**
+```json
+{
+  "items": [
+    {
+      "id": 42,
+      "process_id": 1,
+      "entity_id": "CUST-20251003-001",
+      "entity_name": "Acme Corporation",
+      "status": "completed",
+      "meta": {...},
+      "started_at": "2025-10-03T10:00:00Z",
+      "finished_at": "2025-10-03T10:15:00Z"
+    }
+  ],
+  "total": 250,
+  "page": 1,
+  "size": 50,
+  "pages": 5
+}
+```
+
+**Query Parameters:**
+- **Filters:**
+  - `process_id` - Filter by process ID
+  - `entity_id` - Filter by entity ID
+  - `entity_name` - Partial match on entity name
+  - `status` - Filter by run status
+  - `started_after`, `started_before` - Date filters (ISO 8601 format)
+  - `finished_after`, `finished_before` - Date filters (ISO 8601 format)
+  - `meta_filter` - Filter by metadata (format: `field:value,field2:value2`)
+- **Sorting:**
+  - `order_by` - Field to sort by (default: `created_at`)
+  - `sort_direction` - Sort direction: `asc` or `desc` (default: `desc`)
+- **Pagination:**
+  - `page` - Page number (default: 1)
+  - `size` - Items per page (default: 50, maximum: 100)
+
+**Note:** Only returns active (non-deleted) runs. Soft-deleted runs are automatically excluded from results.
 
 #### **Get Process Run Details**
 ```http
 GET /api/v1/runs/{run_id}
-Authorization: Bearer {API_KEY}
+X-API-Key: {API_KEY}
 ```
 
 ### **Step Management**
@@ -451,21 +532,25 @@ Authorization: Bearer {API_KEY}
 #### **List Process Steps**
 ```http
 GET /api/v1/steps/process/{process_id}
-Authorization: Bearer {API_KEY}
+X-API-Key: {API_KEY}
 ```
+
+**Note:** Only returns active (non-deleted) steps. Soft-deleted steps are automatically excluded.
 
 #### **Get Rerunnable Steps**
 ```http
 GET /api/v1/steps/process/{process_id}/rerunnable
-Authorization: Bearer {API_KEY}
+X-API-Key: {API_KEY}
 ```
+
+**Note:** Only returns active (non-deleted) steps. Soft-deleted steps are automatically excluded.
 
 ### **Step Execution Management**
 
 #### **Update Step Execution Status**
 ```http
 PATCH /api/v1/step-runs/{step_run_id}
-Authorization: Bearer {API_KEY}
+X-API-Key: {API_KEY}
 Content-Type: application/json
 
 {
@@ -484,7 +569,7 @@ Content-Type: application/json
 #### **Rerun Failed Step**
 ```http
 POST /api/v1/step-runs/{step_run_id}/rerun
-Authorization: Bearer {API_KEY}
+X-API-Key: {API_KEY}
 Content-Type: application/json
 
 {
@@ -551,8 +636,10 @@ sequenceDiagram
 
 ```http
 GET /api/v1/dashboard/process/{process_id}
-Authorization: Bearer {API_KEY}
+X-API-Key: {API_KEY}
 ```
+
+**Note:** Dashboard only shows active (non-deleted) runs. Soft-deleted runs are automatically excluded.
 
 **Response:**
 ```json
@@ -591,17 +678,9 @@ Create a `.env` file in your project root:
 ```bash
 # Database Configuration
 DATABASE_URL=mssql+pyodbc://username:password@server/database?driver=ODBC+Driver+17+for+SQL+Server
-DB_ECHO=false
-
-# Security Configuration
-SECRET_KEY=your-super-secret-key-here-change-in-production
-ALGORITHM=HS256
 
 # Application Configuration
-API_HOST=0.0.0.0
-API_PORT=8000
 DEBUG=false
-ENVIRONMENT=production
 API_V1_PREFIX=/api/v1
 
 # CORS Configuration
@@ -621,10 +700,8 @@ services:
     build: .
     environment:
       - DATABASE_URL=mssql+pyodbc://sa:YourPassword@db/ProcessDashboard?driver=ODBC+Driver+18+for+SQL+Server
-      - SECRET_KEY=production-secret-key-change-me
-      - API_HOST=0.0.0.0
-      - API_PORT=8000
       - DEBUG=false
+      - CORS_ORIGINS=["http://localhost:3000"]
     ports:
       - "8000:8000"
     depends_on:
@@ -712,6 +789,103 @@ print(f'Admin Key: {admin_key.key}')
 
 ---
 
+## **Pagination**
+
+### **Overview**
+
+All list endpoints support standardized pagination using the `page` and `size` query parameters. The API returns pagination metadata in both the response body and HTTP headers.
+
+### **Paginated Endpoints**
+
+The following endpoints support pagination:
+
+- `GET /api/v1/processes/` - List all processes
+- `GET /api/v1/runs/` - List all process runs
+- `GET /api/v1/admin/api-keys/` - List all API keys (admin only)
+
+### **Query Parameters**
+
+| Parameter | Type | Default | Maximum | Description |
+|-----------|------|---------|---------|-------------|
+| `page` | integer | 1 | - | Page number (1-indexed) |
+| `size` | integer | 50 | 100 | Number of items per page |
+
+### **Response Format**
+
+All paginated endpoints return a consistent response structure:
+
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "...": "..."
+    }
+  ],
+  "total": 150,
+  "page": 1,
+  "size": 50,
+  "pages": 3
+}
+```
+
+**Fields:**
+- `items` - Array of data objects for the current page
+- `total` - Total number of records matching the query
+- `page` - Current page number
+- `size` - Number of items per page
+- `pages` - Total number of pages available
+
+### **Response Headers**
+
+#### **Link Header (RFC 8288)**
+
+The `Link` header provides navigation URLs for pagination:
+
+```
+Link: <http://api/v1/resource?page=1&size=50>; rel="first",
+      <http://api/v1/resource?page=5&size=50>; rel="last",
+      <http://api/v1/resource?page=1&size=50>; rel="prev",
+      <http://api/v1/resource?page=3&size=50>; rel="next"
+```
+
+**Relations:**
+- `first` - URL to the first page
+- `last` - URL to the last page
+- `prev` - URL to the previous page (omitted if on first page)
+- `next` - URL to the next page (omitted if on last page)
+
+**Note:** The Link header preserves all query parameters (filters, sorting, etc.) for easy navigation.
+
+#### **Custom Headers**
+
+Additional headers provide quick access to pagination metadata:
+
+| Header | Description | Example |
+|--------|-------------|---------|
+| `X-Total-Count` | Total number of records | `150` |
+| `X-Page` | Current page number | `2` |
+| `X-Page-Size` | Items per page | `50` |
+| `X-Total-Pages` | Total number of pages | `3` |
+
+### **Usage Examples**
+
+#### **Basic Pagination**
+
+```http
+GET /api/v1/processes/?page=1&size=25
+X-API-Key: {API_KEY}
+```
+
+#### **With Filters and Sorting**
+
+```http
+GET /api/v1/runs/?page=2&size=10&process_id=1&order_by=created_at&sort_direction=desc
+X-API-Key: {API_KEY}
+```
+
+---
+
 ## **Monitoring & Observability**
 
 ### **Health Checks**
@@ -757,7 +931,7 @@ GET /
 
 ```http
 GET /api/v1/auth/usage-stats
-Authorization: Bearer {API_KEY}
+X-API-Key: {API_KEY}
 ```
 
 **Response:**
@@ -893,21 +1067,21 @@ When the server is running, access:
 ```http
 # Filter by custom metadata fields
 GET /api/v1/runs/?meta_filter=department:Sales,priority:high,region:EMEA
-Authorization: Bearer {API_KEY}
+X-API-Key: {API_KEY}
 ```
 
 #### **Date Range Filtering**
 ```http
 # Filter by time periods
 GET /api/v1/runs/?created_after=2025-10-01T00:00:00Z&created_before=2025-10-31T23:59:59Z
-Authorization: Bearer {API_KEY}
+X-API-Key: {API_KEY}
 ```
 
 #### **Searchable Fields Discovery**
 ```http
 # Get available filterable fields for a process
 GET /api/v1/processes/{process_id}/searchable-fields
-Authorization: Bearer {API_KEY}
+X-API-Key: {API_KEY}
 ```
 
 ---
@@ -955,6 +1129,7 @@ python scripts/update_version.py 2.1.0
 - **Architecture Guide**: [System Design](./documentation/datamodel_diagram.md)
 - **Visualization Examples**: [Dashboard Examples](./documentation/example_visualization.md)
 - **Data Retention Guide**: [Step Run Functionality](./documentation/step_rerun_functionality.md)
+- **Pagination Guide**: [Pagination Implementation](./documentation/pagination_implementation.md)
 - **Version Management**: [Version Management Guide](./scripts/VERSION_MANAGEMENT.md)
 - **Database Migrations**: [Migration Scripts](./scripts/migrations/README.md)
 
