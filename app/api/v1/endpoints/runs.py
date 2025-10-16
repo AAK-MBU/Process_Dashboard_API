@@ -39,7 +39,7 @@ def list_process_runs(
     process_id: int | None = Query(None, description="Filter by process ID"),
     entity_id: str | None = Query(None, description="Filter by entity ID"),
     entity_name: str | None = Query(None, description="Filter by entity name (partial match)"),
-    status: str | None = Query(None, description="Filter by status"),
+    run_status: str | None = Query(None, description="Filter by status"),
     # Date filters
     started_after: str | None = Query(
         None, description="Filter runs started after this date (ISO format)"
@@ -65,7 +65,11 @@ def list_process_runs(
     limit: int = Query(100, ge=1, le=1000),
 ) -> list[ProcessRun]:
     """List all process runs with optional filters and sorting."""
+    # Base query
     statement = select(ProcessRun)
+
+    # Exclude soft-deleted runs by default
+    statement = statement.where(ProcessRun.deleted_at.is_(None))
 
     # Basic filters
     if process_id:
@@ -74,8 +78,8 @@ def list_process_runs(
         statement = statement.where(ProcessRun.entity_id == entity_id)
     if entity_name:
         statement = statement.where(ProcessRun.entity_name.contains(entity_name))
-    if status:
-        statement = statement.where(ProcessRun.status == status)
+    if run_status:
+        statement = statement.where(ProcessRun.status == run_status)
 
     # Date filters
     if started_after:
@@ -153,7 +157,7 @@ def list_process_runs(
 def get_process_run(*, session: SessionDep, run_id: int) -> ProcessRun:
     """Get a specific process run by ID."""
     run = session.get(ProcessRun, run_id)
-    if not run:
+    if not run or run.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Process run not found")
     return run
 

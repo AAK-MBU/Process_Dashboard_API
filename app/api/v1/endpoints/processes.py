@@ -43,7 +43,9 @@ def list_processes(
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
 ) -> list[Process]:
     """List all processes with pagination."""
-    statement = select(Process).order_by("id").offset(skip).limit(limit)
+    statement = (
+        select(Process).where(Process.deleted_at.is_(None)).order_by("id").offset(skip).limit(limit)
+    )
     processes = session.exec(statement).all()
     return list(processes)
 
@@ -57,7 +59,7 @@ def list_processes(
 def get_process(*, session: SessionDep, process_id: int) -> Process:
     """Get a specific process by ID."""
     process = session.get(Process, process_id)
-    if not process:
+    if not process or process.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Process not found")
     return process
 

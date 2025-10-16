@@ -137,7 +137,12 @@ def rerun_step(*, session: SessionDep, step_run_id: int) -> ProcessStepRun:
 )
 def list_step_runs_for_run(*, session: SessionDep, run_id: int) -> list[ProcessStepRun]:
     """List all step runs for a specific process run."""
-    statement = select(ProcessStepRun).where(ProcessStepRun.run_id == run_id).order_by("step_index")
+    statement = (
+        select(ProcessStepRun)
+        .where(ProcessStepRun.run_id == run_id)
+        .where(ProcessStepRun.deleted_at.is_(None))
+        .order_by("step_index")
+    )
     step_runs = session.exec(statement).all()
     return list(step_runs)
 
@@ -153,8 +158,9 @@ def list_rerunnable_step_runs(*, session: SessionDep, run_id: int) -> list[Proce
     statement = (
         select(ProcessStepRun)
         .where(ProcessStepRun.run_id == run_id)
-        .where(ProcessStepRun.can_rerun == True)
+        .where(ProcessStepRun.can_rerun == True)  # noqa: E712
         .where(ProcessStepRun.status == StepRunStatus.FAILED)
+        .where(ProcessStepRun.deleted_at.is_(None))
         .order_by("step_index")
     )
     step_runs = session.exec(statement).all()
