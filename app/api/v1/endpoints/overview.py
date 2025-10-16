@@ -27,8 +27,12 @@ def get_dashboard_overview(*, session: SessionDep, process_id: int) -> dict[str,
     if not process:
         raise HTTPException(status_code=404, detail="Process not found")
 
-    # Get all runs for this process
-    statement = select(ProcessRun).where(ProcessRun.process_id == process_id)
+    # Get all runs for this process (exclude soft-deleted)
+    statement = (
+        select(ProcessRun)
+        .where(ProcessRun.process_id == process_id)
+        .where(ProcessRun.deleted_at.is_(None))
+    )
     runs = session.exec(statement).all()
 
     return {

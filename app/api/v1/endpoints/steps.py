@@ -46,7 +46,12 @@ def create_process_step(
 )
 def list_process_steps(*, session: SessionDep, process_id: int) -> list[ProcessStep]:
     """List all steps for a specific process."""
-    statement = select(ProcessStep).where(ProcessStep.process_id == process_id).order_by("index")
+    statement = (
+        select(ProcessStep)
+        .where(ProcessStep.process_id == process_id)
+        .where(ProcessStep.deleted_at.is_(None))
+        .order_by("index")
+    )
     steps = session.exec(statement).all()
     return list(steps)
 
@@ -63,6 +68,7 @@ def list_rerunnable_steps(*, session: SessionDep, process_id: int) -> list[Proce
         select(ProcessStep)
         .where(ProcessStep.process_id == process_id)
         .where(ProcessStep.is_rerunnable)
+        .where(ProcessStep.deleted_at.is_(None))
         .order_by("index")
     )
     steps = session.exec(statement).all()

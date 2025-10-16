@@ -102,7 +102,7 @@ graph TD
 
 5. **Verify Installation**
    ```bash
-   curl -H "Authorization: Bearer YOUR_ADMIN_KEY" \
+   curl -H "X-API-Key: YOUR_ADMIN_KEY" \
         http://localhost:8000/api/v1/auth/verify
    ```
 
@@ -111,10 +111,8 @@ graph TD
 ```bash
 # .env file example
 DATABASE_URL=mssql+pyodbc://username:password@server/database?driver=ODBC+Driver+18+for+SQL+Server
-SECRET_KEY=your-super-secret-key-here
-API_HOST=0.0.0.0
-API_PORT=8000
 DEBUG=false
+CORS_ORIGINS='["http://localhost:3000","http://localhost:8080"]'
 ```
 
 ---
@@ -135,7 +133,7 @@ The API implements a two-tier role-based access control system:
 #### **Create API Key** (Administrator Only)
 ```http
 POST /api/v1/api-keys/
-Authorization: Bearer {ADMIN_KEY}
+X-API-Key: {ADMIN_KEY}
 Content-Type: application/json
 
 {
@@ -164,13 +162,13 @@ Content-Type: application/json
 #### **List API Keys** (Administrator Only)
 ```http
 GET /api/v1/api-keys/
-Authorization: Bearer {ADMIN_KEY}
+X-API-Key: {ADMIN_KEY}
 ```
 
 #### **Revoke API Key** (Administrator Only)
 ```http
 DELETE /api/v1/api-keys/{key_id}
-Authorization: Bearer {ADMIN_KEY}
+X-API-Key: {ADMIN_KEY}
 ```
 
 ### **Authentication Endpoints**
@@ -178,7 +176,7 @@ Authorization: Bearer {ADMIN_KEY}
 #### **Verify API Key**
 ```http
 GET /api/v1/auth/verify
-Authorization: Bearer {API_KEY}
+X-API-Key: {API_KEY}
 ```
 
 **Response:**
@@ -200,7 +198,7 @@ Authorization: Bearer {API_KEY}
 #### **Get Current Key Details**
 ```http
 GET /api/v1/auth/me
-Authorization: Bearer {API_KEY}
+X-API-Key: {API_KEY}
 ```
 
 ---
@@ -213,7 +211,7 @@ The API implements comprehensive data retention and privacy management capabilit
 
 ### **Key Features**
 
-- **Soft Delete** - Recoverable deletion with retention periods
+- **Soft Delete** - Recoverable deletion with retention periods. Soft-deleted items are automatically hidden from all API responses.
 - **Configurable Retention** - Set custom retention periods per process (e.g., 6, 12, 48 months)
 - **Automatic Neutralization** - Scheduled removal of personally identifiable information (PII)
 - **Audit Trail** - Complete tracking of all deletion and neutralization operations
@@ -223,7 +221,7 @@ The API implements comprehensive data retention and privacy management capabilit
 #### **Set Retention Period for Process**
 ```http
 PUT /api/v1/processes/{process_id}/retention
-Authorization: Bearer {ADMIN_KEY}
+X-API-Key: {ADMIN_KEY}
 Content-Type: application/json
 
 {
@@ -240,30 +238,33 @@ Content-Type: application/json
 #### **Soft Delete Process**
 ```http
 DELETE /api/v1/processes/{process_id}
-Authorization: Bearer {ADMIN_KEY}
+X-API-Key: {ADMIN_KEY}
 ```
 
 **Behavior:**
 - Process marked as deleted (not permanently removed)
 - All associated runs and steps marked as deleted
+- **Soft-deleted items are automatically hidden** from all list endpoints and queries
+- Accessing a soft-deleted item by ID returns 404 (not found)
 - Data remains recoverable until retention period expires
+- Use the restore endpoint to make the process visible again
 
 #### **Restore Deleted Process**
 ```http
 POST /api/v1/processes/{process_id}/restore
-Authorization: Bearer {ADMIN_KEY}
+X-API-Key: {ADMIN_KEY}
 ```
 
 #### **Soft Delete Process Run**
 ```http
 DELETE /api/v1/runs/{run_id}
-Authorization: Bearer {ADMIN_KEY}
+X-API-Key: {ADMIN_KEY}
 ```
 
 #### **Restore Deleted Run**
 ```http
 POST /api/v1/runs/{run_id}/restore
-Authorization: Bearer {ADMIN_KEY}
+X-API-Key: {ADMIN_KEY}
 ```
 
 ### **Data Neutralization**
@@ -271,7 +272,7 @@ Authorization: Bearer {ADMIN_KEY}
 #### **Neutralize Run Data** (Remove PII)
 ```http
 POST /api/v1/runs/{run_id}/neutralize
-Authorization: Bearer {ADMIN_KEY}
+X-API-Key: {ADMIN_KEY}
 ```
 
 **Neutralization Process:**
@@ -311,7 +312,7 @@ Authorization: Bearer {ADMIN_KEY}
 #### **Get Cleanup Statistics**
 ```http
 GET /api/v1/admin/cleanup/stats?limit=10
-Authorization: Bearer {ADMIN_KEY}
+X-API-Key: {ADMIN_KEY}
 ```
 
 **Response:**
@@ -325,7 +326,7 @@ Authorization: Bearer {ADMIN_KEY}
 #### **Trigger Batch Neutralization**
 ```http
 POST /api/v1/admin/cleanup/neutralize?limit=100&dry_run=false
-Authorization: Bearer {ADMIN_KEY}
+X-API-Key: {ADMIN_KEY}
 ```
 
 **Parameters:**
@@ -375,16 +376,18 @@ Admin Triggers Cleanup
 #### **List Processes**
 ```http
 GET /api/v1/processes/
-Authorization: Bearer {API_KEY}
+X-API-Key: {API_KEY}
 
 # Query Parameters
 ?limit=50&offset=0
 ```
 
+**Note:** Only returns active (non-deleted) processes. Soft-deleted processes are automatically excluded.
+
 #### **Create Process**
 ```http
 POST /api/v1/processes/
-Authorization: Bearer {API_KEY}
+X-API-Key: {API_KEY}
 Content-Type: application/json
 
 {
@@ -401,7 +404,7 @@ Content-Type: application/json
 #### **Get Process Details**
 ```http
 GET /api/v1/processes/{process_id}
-Authorization: Bearer {API_KEY}
+X-API-Key: {API_KEY}
 ```
 
 ### **Process Execution Management**
@@ -409,7 +412,7 @@ Authorization: Bearer {API_KEY}
 #### **Start Process Execution**
 ```http
 POST /api/v1/runs/
-Authorization: Bearer {API_KEY}
+X-API-Key: {API_KEY}
 Content-Type: application/json
 
 {
@@ -428,7 +431,7 @@ Content-Type: application/json
 #### **Query Process Runs**
 ```http
 GET /api/v1/runs/
-Authorization: Bearer {API_KEY}
+X-API-Key: {API_KEY}
 
 # Advanced Filtering
 ?entity_name=Acme
@@ -440,10 +443,12 @@ Authorization: Bearer {API_KEY}
 &offset=0
 ```
 
+**Note:** Only returns active (non-deleted) runs. Soft-deleted runs are automatically excluded from results.
+
 #### **Get Process Run Details**
 ```http
 GET /api/v1/runs/{run_id}
-Authorization: Bearer {API_KEY}
+X-API-Key: {API_KEY}
 ```
 
 ### **Step Management**
@@ -451,21 +456,25 @@ Authorization: Bearer {API_KEY}
 #### **List Process Steps**
 ```http
 GET /api/v1/steps/process/{process_id}
-Authorization: Bearer {API_KEY}
+X-API-Key: {API_KEY}
 ```
+
+**Note:** Only returns active (non-deleted) steps. Soft-deleted steps are automatically excluded.
 
 #### **Get Rerunnable Steps**
 ```http
 GET /api/v1/steps/process/{process_id}/rerunnable
-Authorization: Bearer {API_KEY}
+X-API-Key: {API_KEY}
 ```
+
+**Note:** Only returns active (non-deleted) steps. Soft-deleted steps are automatically excluded.
 
 ### **Step Execution Management**
 
 #### **Update Step Execution Status**
 ```http
 PATCH /api/v1/step-runs/{step_run_id}
-Authorization: Bearer {API_KEY}
+X-API-Key: {API_KEY}
 Content-Type: application/json
 
 {
@@ -484,7 +493,7 @@ Content-Type: application/json
 #### **Rerun Failed Step**
 ```http
 POST /api/v1/step-runs/{step_run_id}/rerun
-Authorization: Bearer {API_KEY}
+X-API-Key: {API_KEY}
 Content-Type: application/json
 
 {
@@ -551,8 +560,10 @@ sequenceDiagram
 
 ```http
 GET /api/v1/dashboard/process/{process_id}
-Authorization: Bearer {API_KEY}
+X-API-Key: {API_KEY}
 ```
+
+**Note:** Dashboard only shows active (non-deleted) runs. Soft-deleted runs are automatically excluded.
 
 **Response:**
 ```json
@@ -591,17 +602,9 @@ Create a `.env` file in your project root:
 ```bash
 # Database Configuration
 DATABASE_URL=mssql+pyodbc://username:password@server/database?driver=ODBC+Driver+17+for+SQL+Server
-DB_ECHO=false
-
-# Security Configuration
-SECRET_KEY=your-super-secret-key-here-change-in-production
-ALGORITHM=HS256
 
 # Application Configuration
-API_HOST=0.0.0.0
-API_PORT=8000
 DEBUG=false
-ENVIRONMENT=production
 API_V1_PREFIX=/api/v1
 
 # CORS Configuration
@@ -621,10 +624,8 @@ services:
     build: .
     environment:
       - DATABASE_URL=mssql+pyodbc://sa:YourPassword@db/ProcessDashboard?driver=ODBC+Driver+18+for+SQL+Server
-      - SECRET_KEY=production-secret-key-change-me
-      - API_HOST=0.0.0.0
-      - API_PORT=8000
       - DEBUG=false
+      - CORS_ORIGINS=["http://localhost:3000"]
     ports:
       - "8000:8000"
     depends_on:
@@ -757,7 +758,7 @@ GET /
 
 ```http
 GET /api/v1/auth/usage-stats
-Authorization: Bearer {API_KEY}
+X-API-Key: {API_KEY}
 ```
 
 **Response:**
@@ -893,21 +894,21 @@ When the server is running, access:
 ```http
 # Filter by custom metadata fields
 GET /api/v1/runs/?meta_filter=department:Sales,priority:high,region:EMEA
-Authorization: Bearer {API_KEY}
+X-API-Key: {API_KEY}
 ```
 
 #### **Date Range Filtering**
 ```http
 # Filter by time periods
 GET /api/v1/runs/?created_after=2025-10-01T00:00:00Z&created_before=2025-10-31T23:59:59Z
-Authorization: Bearer {API_KEY}
+X-API-Key: {API_KEY}
 ```
 
 #### **Searchable Fields Discovery**
 ```http
 # Get available filterable fields for a process
 GET /api/v1/processes/{process_id}/searchable-fields
-Authorization: Bearer {API_KEY}
+X-API-Key: {API_KEY}
 ```
 
 ---
