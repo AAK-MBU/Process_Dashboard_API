@@ -1,10 +1,13 @@
 """API endpoints for managing process runs."""
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi_pagination import Page, Params
+from fastapi_pagination.ext.sqlmodel import paginate
 from sqlalchemy import text
 from sqlmodel import select
 
 from app.api.dependencies import RequireAdminKey, RunServiceDep
+from app.core.pagination import add_pagination_links
 from app.db.database import SessionDep
 from app.models import NeutralizationResult, ProcessRun, ProcessRunCreate, ProcessRunPublic
 from app.services import DataRetentionService
@@ -29,11 +32,13 @@ def create_process_run(
 
 @router.get(
     "/",
-    response_model=list[ProcessRunPublic],
+    response_model=Page[ProcessRunPublic],
     summary="List all process runs",
     description="Retrieve all process runs with optional filtering and sorting",
 )
 def list_process_runs(
+    request: Request,
+    response: Response,
     session: SessionDep,
     # Basic filters
     process_id: int | None = Query(None, description="Filter by process ID"),
@@ -61,9 +66,8 @@ def list_process_runs(
     order_by: str = Query("created_at", description="Field to sort by"),
     sort_direction: str = Query("desc", regex="^(asc|desc)$"),
     # Pagination
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
-) -> list[ProcessRun]:
+    params: Params = Depends(),
+) -> Page[ProcessRun]:
     """List all process runs with optional filters and sorting."""
     # Base query
     statement = select(ProcessRun)
@@ -143,9 +147,11 @@ def list_process_runs(
         else:
             statement = statement.order_by(column.asc())
 
-    statement = statement.offset(skip).limit(limit)
-    runs = session.exec(statement).all()
-    return list(runs)
+    # Paginate and add Link headers
+    page_data = paginate(session, statement, params)
+    add_pagination_links(request, response, page_data)
+
+    return page_data
 
 
 @router.get(
