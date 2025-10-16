@@ -2,15 +2,18 @@
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi_pagination import Page, Params
+from fastapi_pagination.ext.sqlmodel import paginate
 from sqlmodel import select
 
 from app.api.dependencies import RequireAdminKey
+from app.core.pagination import add_pagination_links
 from app.db.database import SessionDep
 from app.models import Process, ProcessCreate, ProcessPublic, RetentionUpdate
 from app.services import ProcessService
 
-router = APIRouter(prefix="/processes", tags=["processes"])
+router = APIRouter(tags=["processes"])
 
 
 @router.post(
@@ -33,21 +36,24 @@ def create_process(
 
 @router.get(
     "/",
-    response_model=list[ProcessPublic],
+    response_model=Page[ProcessPublic],
     summary="List all processes",
-    description="Retrieve a list of all process definitions",
+    description="Retrieve a list of all process definitions with pagination",
 )
 def list_processes(
+    request: Request,
+    response: Response,
     session: SessionDep,
-    skip: int = Query(0, ge=0, description="Number of records to skip"),
-    limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
-) -> list[Process]:
+    params: Params = Depends(),
+) -> Page[Process]:
     """List all processes with pagination."""
-    statement = (
-        select(Process).where(Process.deleted_at.is_(None)).order_by("id").offset(skip).limit(limit)
-    )
-    processes = session.exec(statement).all()
-    return list(processes)
+    statement = select(Process).where(Process.deleted_at.is_(None)).order_by("id")
+    page_data = paginate(session, statement, params)
+
+    # Add Link headers for pagination navigation
+    add_pagination_links(request, response, page_data)
+
+    return page_data
 
 
 @router.get(

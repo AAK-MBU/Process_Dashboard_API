@@ -20,6 +20,7 @@ The Process Dashboard API provides a platform for:
 - **Retry Management** - Automated failure recovery with configurable retry strategies  
 - **Security** - Role-based API authentication with audit trails
 - **Data Retention** - Configurable retention policies with GDPR-compliant data neutralization
+- **Pagination** - Standardized pagination with RFC 8288 Link headers
 - **Features** - Advanced filtering, search, and dashboard capabilities
 
 ## **System Architecture**
@@ -42,6 +43,7 @@ The Process Dashboard API provides a platform for:
 | **Data Layer** | SQLModel + SQLAlchemy | Type-safe ORM with automatic validation |
 | **Database** | Microsoft SQL Server | Enterprise-grade persistence layer |
 | **Authentication** | Custom JWT + API Keys | Multi-tier security with role-based access |
+| **Pagination** | fastapi-pagination | RFC 8288 compliant pagination with Link headers |
 | **Deployment** | Docker + Compose | Containerized deployment and scaling |
 | **Package Management** | UV | Fast Python dependency resolution |
 
@@ -244,7 +246,7 @@ X-API-Key: {ADMIN_KEY}
 **Behavior:**
 - Process marked as deleted (not permanently removed)
 - All associated runs and steps marked as deleted
-- **Soft-deleted items are automatically hidden** from all list endpoints and queries
+- Soft-deleted items are automatically hidden from all list endpoints and queries
 - Accessing a soft-deleted item by ID returns 404 (not found)
 - Data remains recoverable until retention period expires
 - Use the restore endpoint to make the process visible again
@@ -378,9 +380,43 @@ Admin Triggers Cleanup
 GET /api/v1/processes/
 X-API-Key: {API_KEY}
 
-# Query Parameters
-?limit=50&offset=0
+# Pagination Parameters
+?page=1&size=50
 ```
+
+**Response:**
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "name": "Customer Onboarding",
+      "meta": {...},
+      "created_at": "2025-10-03T10:00:00Z",
+      "updated_at": "2025-10-03T10:00:00Z"
+    }
+  ],
+  "total": 150,
+  "page": 1,
+  "size": 50,
+  "pages": 3
+}
+```
+
+**Response Headers:**
+```
+Link: <http://api/v1/processes/?page=1&size=50>; rel="first", 
+      <http://api/v1/processes/?page=3&size=50>; rel="last",
+      <http://api/v1/processes/?page=2&size=50>; rel="next"
+X-Total-Count: 150
+X-Page: 1
+X-Page-Size: 50
+X-Total-Pages: 3
+```
+
+**Pagination Parameters:**
+- `page` - Page number (default: 1, minimum: 1)
+- `size` - Items per page (default: 50, maximum: 100)
 
 **Note:** Only returns active (non-deleted) processes. Soft-deleted processes are automatically excluded.
 
@@ -433,15 +469,55 @@ Content-Type: application/json
 GET /api/v1/runs/
 X-API-Key: {API_KEY}
 
-# Advanced Filtering
+# Advanced Filtering with Pagination
 ?entity_name=Acme
 &status=completed
 &created_after=2025-10-01T00:00:00Z
 &created_before=2025-10-31T23:59:59Z
 &meta_filter=priority:high,environment:production
-&limit=100
-&offset=0
+&order_by=created_at
+&sort_direction=desc
+&page=1
+&size=50
 ```
+
+**Response:**
+```json
+{
+  "items": [
+    {
+      "id": 42,
+      "process_id": 1,
+      "entity_id": "CUST-20251003-001",
+      "entity_name": "Acme Corporation",
+      "status": "completed",
+      "meta": {...},
+      "started_at": "2025-10-03T10:00:00Z",
+      "finished_at": "2025-10-03T10:15:00Z"
+    }
+  ],
+  "total": 250,
+  "page": 1,
+  "size": 50,
+  "pages": 5
+}
+```
+
+**Query Parameters:**
+- **Filters:**
+  - `process_id` - Filter by process ID
+  - `entity_id` - Filter by entity ID
+  - `entity_name` - Partial match on entity name
+  - `status` - Filter by run status
+  - `started_after`, `started_before` - Date filters (ISO 8601 format)
+  - `finished_after`, `finished_before` - Date filters (ISO 8601 format)
+  - `meta_filter` - Filter by metadata (format: `field:value,field2:value2`)
+- **Sorting:**
+  - `order_by` - Field to sort by (default: `created_at`)
+  - `sort_direction` - Sort direction: `asc` or `desc` (default: `desc`)
+- **Pagination:**
+  - `page` - Page number (default: 1)
+  - `size` - Items per page (default: 50, maximum: 100)
 
 **Note:** Only returns active (non-deleted) runs. Soft-deleted runs are automatically excluded from results.
 
@@ -713,6 +789,103 @@ print(f'Admin Key: {admin_key.key}')
 
 ---
 
+## **Pagination**
+
+### **Overview**
+
+All list endpoints support standardized pagination using the `page` and `size` query parameters. The API returns pagination metadata in both the response body and HTTP headers.
+
+### **Paginated Endpoints**
+
+The following endpoints support pagination:
+
+- `GET /api/v1/processes/` - List all processes
+- `GET /api/v1/runs/` - List all process runs
+- `GET /api/v1/admin/api-keys/` - List all API keys (admin only)
+
+### **Query Parameters**
+
+| Parameter | Type | Default | Maximum | Description |
+|-----------|------|---------|---------|-------------|
+| `page` | integer | 1 | - | Page number (1-indexed) |
+| `size` | integer | 50 | 100 | Number of items per page |
+
+### **Response Format**
+
+All paginated endpoints return a consistent response structure:
+
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "...": "..."
+    }
+  ],
+  "total": 150,
+  "page": 1,
+  "size": 50,
+  "pages": 3
+}
+```
+
+**Fields:**
+- `items` - Array of data objects for the current page
+- `total` - Total number of records matching the query
+- `page` - Current page number
+- `size` - Number of items per page
+- `pages` - Total number of pages available
+
+### **Response Headers**
+
+#### **Link Header (RFC 8288)**
+
+The `Link` header provides navigation URLs for pagination:
+
+```
+Link: <http://api/v1/resource?page=1&size=50>; rel="first",
+      <http://api/v1/resource?page=5&size=50>; rel="last",
+      <http://api/v1/resource?page=1&size=50>; rel="prev",
+      <http://api/v1/resource?page=3&size=50>; rel="next"
+```
+
+**Relations:**
+- `first` - URL to the first page
+- `last` - URL to the last page
+- `prev` - URL to the previous page (omitted if on first page)
+- `next` - URL to the next page (omitted if on last page)
+
+**Note:** The Link header preserves all query parameters (filters, sorting, etc.) for easy navigation.
+
+#### **Custom Headers**
+
+Additional headers provide quick access to pagination metadata:
+
+| Header | Description | Example |
+|--------|-------------|---------|
+| `X-Total-Count` | Total number of records | `150` |
+| `X-Page` | Current page number | `2` |
+| `X-Page-Size` | Items per page | `50` |
+| `X-Total-Pages` | Total number of pages | `3` |
+
+### **Usage Examples**
+
+#### **Basic Pagination**
+
+```http
+GET /api/v1/processes/?page=1&size=25
+X-API-Key: {API_KEY}
+```
+
+#### **With Filters and Sorting**
+
+```http
+GET /api/v1/runs/?page=2&size=10&process_id=1&order_by=created_at&sort_direction=desc
+X-API-Key: {API_KEY}
+```
+
+---
+
 ## **Monitoring & Observability**
 
 ### **Health Checks**
@@ -956,6 +1129,7 @@ python scripts/update_version.py 2.1.0
 - **Architecture Guide**: [System Design](./documentation/datamodel_diagram.md)
 - **Visualization Examples**: [Dashboard Examples](./documentation/example_visualization.md)
 - **Data Retention Guide**: [Step Run Functionality](./documentation/step_rerun_functionality.md)
+- **Pagination Guide**: [Pagination Implementation](./documentation/pagination_implementation.md)
 - **Version Management**: [Version Management Guide](./scripts/VERSION_MANAGEMENT.md)
 - **Database Migrations**: [Migration Scripts](./scripts/migrations/README.md)
 

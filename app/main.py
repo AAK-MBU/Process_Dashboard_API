@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi_pagination import add_pagination
 
 from app.api.dependencies import verify_api_key
 from app.api.v1 import api_router
@@ -45,6 +46,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Configure pagination (must be before including routers)
+add_pagination(app)
 
 app.include_router(
     api_router,

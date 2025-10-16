@@ -1,9 +1,12 @@
 """API endpoints for managing API keys."""
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi_pagination import Page, Params
+from fastapi_pagination.ext.sqlmodel import paginate
 from sqlmodel import select
 
 from app.api.dependencies import RequireAdminKey
+from app.core.pagination import add_pagination_links
 from app.db.database import SessionDep
 from app.models import (
     ApiKey,
@@ -49,15 +52,22 @@ def create_api_key(
 
 @router.get(
     "/",
-    response_model=list[ApiKeyPublic],
+    response_model=Page[ApiKeyPublic],
     summary="List all API keys",
     description="List all API keys (without showing the actual keys)",
 )
-def list_api_keys(*, session: SessionDep, admin_key: RequireAdminKey) -> list[ApiKeyPublic]:
+def list_api_keys(
+    request: Request,
+    response: Response,
+    session: SessionDep,
+    admin_key: RequireAdminKey,
+    params: Params = Depends(),
+) -> Page[ApiKey]:
     """List all API keys."""
     statement = select(ApiKey)
-    api_keys = session.exec(statement).all()
-    return [ApiKeyPublic.model_validate(key) for key in api_keys]
+    page_data = paginate(session, statement, params)
+    add_pagination_links(request, response, page_data)
+    return page_data
 
 
 @router.delete(
