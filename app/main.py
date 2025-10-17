@@ -17,12 +17,14 @@ from app.core.exceptions import (
     StepRunError,
 )
 from app.db.database import create_db_and_tables
+from app.models.events import register_events
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     """Application lifespan"""
     create_db_and_tables()
+    register_events()
     yield
 
 

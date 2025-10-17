@@ -69,7 +69,6 @@ def list_process_runs(
     params: Params = Depends(),
 ) -> Page[ProcessRun]:
     """List all process runs with optional filters and sorting."""
-    # Build filtered statement using service layer
     try:
         statement = run_service.build_filtered_statement(
             process_id=process_id,
@@ -87,7 +86,6 @@ def list_process_runs(
             include_neutralized=True,
         )
     except ValueError as e:
-        # Convert service layer validation errors to HTTP errors
         raise HTTPException(status_code=400, detail=str(e)) from e
 
     # Paginate and add Link headers

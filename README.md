@@ -40,7 +40,7 @@ The Process Dashboard API provides a platform for:
 | Component | Technology | Purpose |
 |-----------|------------|---------|
 | **API Framework** | FastAPI 0.104+ | High-performance async web framework |
-| **Data Layer** | SQLModel + SQLAlchemy | Type-safe ORM with automatic validation |
+| **Data Layer** | SQLModel + SQLAlchemy 2.0 | Type-safe ORM with event-driven automation |
 | **Database** | Microsoft SQL Server | Enterprise-grade persistence layer |
 | **Authentication** | Custom JWT + API Keys | Multi-tier security with role-based access |
 | **Pagination** | fastapi-pagination | RFC 8288 compliant pagination with Link headers |
@@ -567,6 +567,8 @@ Content-Type: application/json
 }
 ```
 
+> **Note:** When a step run's status is updated, the parent process run's status is automatically recalculated and updated based on all step statuses. This is handled by SQLAlchemy event handlers.
+
 #### **Rerun Failed Step**
 ```http
 POST /api/v1/step-runs/{step_run_id}/rerun
@@ -667,6 +669,75 @@ X-API-Key: {API_KEY}
   }
 }
 ```
+
+---
+
+## **Automated State Management**
+
+The API implements state management using SQLAlchemy 2.0 event handlers to automatically maintain data consistency.
+
+### **Features**
+
+#### **1. Parent Run Status Propagation**
+
+When any step run's status changes, the parent process run's status is **automatically recalculated** based on all step statuses:
+
+- **Running** - If any step is currently running
+- **Failed** - If any step has failed (and none are running)
+- **Completed** - If all steps are successful
+- **Pending** - Initial state (no steps started yet)
+
+**How it works:**
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant EventHandler
+    participant Database
+    
+    Client->>API: PATCH /step-runs/123 {status: "failed"}
+    API->>Database: Update step_run.status
+    Database->>EventHandler: before_commit event
+    EventHandler->>Database: Query all step statuses for parent run
+    EventHandler->>Database: Recalculate and update run.status
+    Database->>Client: Return updated step_run
+    Note over EventHandler: Parent status automatically updated!
+```
+
+#### **2. Step Index Auto-Population**
+
+When creating step runs, the `step_index` field is **automatically populated** from the related process step's index:
+
+```json
+// Client sends (no step_index required)
+{
+  "run_id": 42,
+  "step_id": 5,
+  "status": "pending"
+}
+
+// Database receives (step_index auto-populated)
+{
+  "run_id": 42,
+  "step_id": 5,
+  "step_index": 3,  // ← Automatically set from ProcessStep.index
+  "status": "pending"
+}
+```
+
+**Implementation:**
+- Uses SQLAlchemy `before_insert` event handler
+- Queries related `ProcessStep` to retrieve the correct index
+- Ensures step runs maintain proper ordering without manual tracking
+
+**Event Lifecycle:**
+1. Client makes API request (create/update step run)
+2. API validates and prepares database changes
+3. **Before Insert** - step_index is auto-populated
+4. Database flush occurs
+5. **Before Commit** - parent run status is recalculated
+6. Transaction commits with all changes
+7. Client receives response with auto-updated data
 
 ---
 
