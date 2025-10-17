@@ -23,7 +23,7 @@ class ProcessStepRunBase(SQLModel):
     failure: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     run_id: int | None = Field(default=None, foreign_key="process_run.id")
     step_id: int | None = Field(default=None, foreign_key="process_step.id")
-    step_index: int = Field(ge=0)
+    step_index: int | None = Field(default=None, ge=0)
 
     can_rerun: bool = Field(
         default=False, description="Whether this specific step run can be rerun"
@@ -55,7 +55,7 @@ class ProcessStepRunCreate(SQLModel):
     """Schema for creating a process step run."""
 
     step_id: int
-    step_index: int = Field(ge=0)
+    step_index: int | None = Field(default=None, ge=0)
     run_id: int
 
 

@@ -67,13 +67,6 @@ def update_step_run(
     session.commit()
     session.refresh(step_run)
 
-    # Update parent run status
-    run = session.get(ProcessRun, step_run.run_id)
-    if run:
-        run.update_status()
-        session.add(run)
-        session.commit()
-
     return step_run
 
 
@@ -118,13 +111,6 @@ def rerun_step(*, session: SessionDep, step_run_id: int) -> ProcessStepRun:
     session.add(step_run)
     session.commit()
     session.refresh(step_run)
-
-    # Update parent run status
-    run = session.get(ProcessRun, step_run.run_id)
-    if run:
-        run.update_status()
-        session.add(run)
-        session.commit()
 
     return step_run
 

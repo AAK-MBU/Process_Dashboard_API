@@ -13,7 +13,7 @@ from app.db.database import SessionDep
 from app.models import Process, ProcessCreate, ProcessPublic, RetentionUpdate
 from app.services import ProcessService
 
-router = APIRouter(tags=["processes"])
+router = APIRouter()
 
 
 @router.post(
@@ -136,12 +136,9 @@ def get_process_searchable_fields(*, session: SessionDep, process_id: int) -> di
         },
     }
 
-    # Get metadata schema from process definition
     metadata_schema = process.meta.get("run_metadata_schema", {})
 
-    # Get actual metadata fields from data - use schema as fallback
     try:
-        # Simple approach: use the schema fields for now
         actual_metadata_fields = list(metadata_schema.keys())
     except Exception:
         actual_metadata_fields = []
