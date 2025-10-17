@@ -474,7 +474,8 @@ X-API-Key: {API_KEY}
 &status=completed
 &created_after=2025-10-01T00:00:00Z
 &created_before=2025-10-31T23:59:59Z
-&meta_filter=priority:high,environment:production
+&meta_filter=priority:high
+&meta_filter=environment:production
 &order_by=created_at
 &sort_direction=desc
 &page=1
@@ -511,7 +512,7 @@ X-API-Key: {API_KEY}
   - `status` - Filter by run status
   - `started_after`, `started_before` - Date filters (ISO 8601 format)
   - `finished_after`, `finished_before` - Date filters (ISO 8601 format)
-  - `meta_filter` - Filter by metadata (format: `field:value,field2:value2`)
+  - `meta_filter` - Filter by metadata (format: `field:value`). Can be specified multiple times for multiple filters. Multiple values for the same field are OR'd together, different fields are AND'd together.
 - **Sorting:**
   - `order_by` - Field to sort by (default: `created_at`)
   - `sort_direction` - Sort direction: `asc` or `desc` (default: `desc`)
@@ -1066,7 +1067,16 @@ When the server is running, access:
 #### **Metadata Filtering**
 ```http
 # Filter by custom metadata fields
-GET /api/v1/runs/?meta_filter=department:Sales,priority:high,region:EMEA
+# Multiple filters: same field = OR, different fields = AND
+GET /api/v1/runs/?meta_filter=department:Sales&meta_filter=priority:high&meta_filter=region:EMEA
+X-API-Key: {API_KEY}
+
+# Example: Filter by multiple values for the same field (OR logic)
+GET /api/v1/runs/?meta_filter=department:Sales&meta_filter=department:Marketing
+X-API-Key: {API_KEY}
+
+# Values can contain commas
+GET /api/v1/runs/?meta_filter=company:Acme, Inc&meta_filter=status:active
 X-API-Key: {API_KEY}
 ```
 
@@ -1116,9 +1126,6 @@ python scripts/update_version.py 2.1.0
 - `pyproject.toml` - Project metadata
 - `.env.example` - Environment template
 - `Dockerfile` - Container configuration
-- `documentation/api_reference.md` - API documentation
-
-**Complete Guide:** See `scripts/VERSION_MANAGEMENT.md` for detailed documentation.
 
 ---
 
@@ -1126,12 +1133,6 @@ python scripts/update_version.py 2.1.0
 
 ### **Documentation Links**
 - **API Reference**: [Interactive Docs](http://localhost:8000/docs)
-- **Architecture Guide**: [System Design](./documentation/datamodel_diagram.md)
-- **Visualization Examples**: [Dashboard Examples](./documentation/example_visualization.md)
-- **Data Retention Guide**: [Step Run Functionality](./documentation/step_rerun_functionality.md)
-- **Pagination Guide**: [Pagination Implementation](./documentation/pagination_implementation.md)
-- **Version Management**: [Version Management Guide](./scripts/VERSION_MANAGEMENT.md)
-- **Database Migrations**: [Migration Scripts](./scripts/migrations/README.md)
 
 ### **Development Resources**
 - **FastAPI Documentation**: https://fastapi.tiangolo.com/
