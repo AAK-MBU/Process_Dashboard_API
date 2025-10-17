@@ -3,8 +3,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi_pagination import Page, Params
 from fastapi_pagination.ext.sqlmodel import paginate
-from sqlalchemy import text
-from sqlmodel import select
 
 from app.api.dependencies import RequireAdminKey, RunServiceDep
 from app.core.pagination import add_pagination_links
@@ -40,6 +38,7 @@ def list_process_runs(
     request: Request,
     response: Response,
     session: SessionDep,
+    run_service: RunServiceDep,
     # Basic filters
     process_id: int | None = Query(None, description="Filter by process ID"),
     entity_id: str | None = Query(None, description="Filter by entity ID"),
@@ -59,8 +58,9 @@ def list_process_runs(
         None, description="Filter runs finished before this date (ISO format)"
     ),
     # Metadata filters (dynamic)
-    meta_filter: str | None = Query(
-        None, description="Metadata filter in format 'field:value' or 'field:value,field2:value2'"
+    meta_filter: list[str] | None = Query(
+        None,
+        description=("Metadata filter in format 'field:value'. Can be specified multiple times"),
     ),
     # Sorting
     order_by: str = Query("created_at", description="Field to sort by"),
@@ -69,83 +69,26 @@ def list_process_runs(
     params: Params = Depends(),
 ) -> Page[ProcessRun]:
     """List all process runs with optional filters and sorting."""
-    # Base query
-    statement = select(ProcessRun)
-
-    # Exclude soft-deleted runs by default
-    statement = statement.where(ProcessRun.deleted_at.is_(None))
-
-    # Basic filters
-    if process_id:
-        statement = statement.where(ProcessRun.process_id == process_id)
-    if entity_id:
-        statement = statement.where(ProcessRun.entity_id == entity_id)
-    if entity_name:
-        statement = statement.where(ProcessRun.entity_name.contains(entity_name))
-    if run_status:
-        statement = statement.where(ProcessRun.status == run_status)
-
-    # Date filters
-    if started_after:
-        statement = statement.where(ProcessRun.started_at >= started_after)
-    if started_before:
-        statement = statement.where(ProcessRun.started_at <= started_before)
-    if finished_after:
-        statement = statement.where(ProcessRun.finished_at >= finished_after)
-    if finished_before:
-        statement = statement.where(ProcessRun.finished_at <= finished_before)
-
-    # Metadata filters
-    if meta_filter:
-        # Parse metadata filters: "field:value,field2:value2"
-        filters = meta_filter.split(",")
-        for filter_item in filters:
-            if ":" in filter_item:
-                field, value = filter_item.split(":", 1)
-                field = field.strip()
-                value = value.strip()
-                # Use SQL Server JSON_VALUE for metadata filtering
-                statement = statement.where(
-                    text(f"JSON_VALUE(process_run.meta, '$.{field}') = :meta_{field}")
-                ).params(**{f"meta_{field}": value})
-
-    # Handle sorting
-    if order_by.startswith("meta."):
-        # Sort by JSON field using SQL Server syntax
-        json_field = order_by.replace("meta.", "")
-        if sort_direction.lower() == "desc":
-            statement = statement.order_by(
-                text(f"JSON_VALUE(process_run.meta, '$.{json_field}') DESC")
-            )
-        else:
-            statement = statement.order_by(
-                text(f"JSON_VALUE(process_run.meta, '$.{json_field}') ASC")
-            )
-    else:
-        # Sort by regular field - use SQLModel column references
-        if order_by == "id":
-            column = ProcessRun.id
-        elif order_by == "entity_id":
-            column = ProcessRun.entity_id
-        elif order_by == "entity_name":
-            column = ProcessRun.entity_name
-        elif order_by == "status":
-            column = ProcessRun.status
-        elif order_by == "started_at":
-            column = ProcessRun.started_at
-        elif order_by == "finished_at":
-            column = ProcessRun.finished_at
-        elif order_by == "created_at":
-            column = ProcessRun.created_at
-        elif order_by == "updated_at":
-            column = ProcessRun.updated_at
-        else:
-            raise HTTPException(status_code=400, detail=f"Invalid sort field '{order_by}'")
-
-        if sort_direction.lower() == "desc":
-            statement = statement.order_by(column.desc())
-        else:
-            statement = statement.order_by(column.asc())
+    # Build filtered statement using service layer
+    try:
+        statement = run_service.build_filtered_statement(
+            process_id=process_id,
+            entity_id=entity_id,
+            entity_name=entity_name,
+            status=run_status,
+            started_after=started_after,
+            started_before=started_before,
+            finished_after=finished_after,
+            finished_before=finished_before,
+            meta_filter=meta_filter,
+            order_by=order_by,
+            sort_direction=sort_direction,
+            include_deleted=False,
+            include_neutralized=True,
+        )
+    except ValueError as e:
+        # Convert service layer validation errors to HTTP errors
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
     # Paginate and add Link headers
     page_data = paginate(session, statement, params)
