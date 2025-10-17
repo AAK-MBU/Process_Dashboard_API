@@ -75,7 +75,6 @@ class ProcessRunService:
         return ProcessStepRun(
             run_id=run_id,
             step_id=step.id,
-            step_index=step.index,
             can_rerun=step.is_rerunnable,
             rerun_config=rerun_config,
             max_reruns=max_reruns,

@@ -54,7 +54,7 @@ class StepRunService:
         """
         Update a process step run status.
 
-        Also updates the parent run's status automatically.
+        Parent run's status is automatically updated via event handlers.
 
         Raises:
             StepRunNotFoundError: If step run doesn't exist
@@ -71,14 +71,13 @@ class StepRunService:
         self.db.commit()
         self.db.refresh(step_run)
 
-        # Update parent run status
-        self._update_parent_run_status(step_run.run_id)
-
         return step_run
 
     def rerun_step(self, step_run_id: int) -> ProcessStepRun:
         """
         Rerun a failed process step.
+
+        Parent run's status is automatically updated via event handlers.
 
         Raises:
             StepRunNotFoundError: If step run doesn't exist
@@ -102,9 +101,6 @@ class StepRunService:
         self.db.commit()
         self.db.refresh(step_run)
 
-        # Update parent run status
-        self._update_parent_run_status(step_run.run_id)
-
         return step_run
 
     def _validate_rerun_conditions(self, step_run: ProcessStepRun) -> None:
@@ -121,14 +117,6 @@ class StepRunService:
             raise StepRunError(
                 f"Step must be in FAILED status to be rerun (current: {step_run.status})"
             )
-
-    def _update_parent_run_status(self, run_id: int) -> None:
-        """Update the parent run's status based on step statuses."""
-        run = self.db.get(ProcessRun, run_id)
-        if run:
-            run.update_status()
-            self.db.add(run)
-            self.db.commit()
 
     def list_step_runs_for_run(self, run_id: int) -> list[ProcessStepRun]:
         """List all step runs for a specific process run."""
