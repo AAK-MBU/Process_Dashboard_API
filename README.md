@@ -464,7 +464,67 @@ Content-Type: application/json
 }
 ```
 
-#### **Query Process Runs**
+#### **Global Search Across Runs**
+```http
+GET /api/v1/runs/search?q={search_term}&process_id={id}
+X-API-Key: {API_KEY}
+
+# Search examples
+?q=Viby&process_id=1&page=1&size=50           # Search in specific process
+?q=completed                                   # Search across all processes
+?q=12345678                                    # Search by entity ID
+```
+
+**Response:**
+```json
+{
+  "items": [
+    {
+      "run": {
+        "id": 42,
+        "process_id": 1,
+        "entity_id": "CUST-001",
+        "entity_name": "Viby Clinic",
+        "status": "completed",
+        "meta": {
+          "clinic": "Viby",
+          "region": "Central"
+        }
+      },
+      "matches": [
+        {
+          "field": "entity_name",
+          "value": "Viby Clinic"
+        },
+        {
+          "field": "meta.clinic",
+          "value": "Viby"
+        }
+      ]
+    }
+  ],
+  "total": 15,
+  "page": 1,
+  "size": 50,
+  "pages": 1
+}
+```
+
+**Features:**
+- **Automatic field detection** - Searches across all relevant fields
+- **Match annotations** - Shows which fields matched and their values
+- **Case-insensitive** - Finds matches regardless of case
+- **Partial matching** - Finds substrings within values
+- **Standard fields** - Always searches: `entity_id`, `entity_name`, `status`
+- **Metadata fields** - Searches custom fields when `process_id` is provided
+
+**Query Parameters:**
+- `q` - Search term (required, minimum 1 character)
+- `process_id` - Optional process ID to search within and include metadata fields
+- `page` - Page number (default: 1)
+- `size` - Items per page (default: 50, maximum: 100)
+
+#### **Query Process Runs** (Precise Filtering)
 ```http
 GET /api/v1/runs/
 X-API-Key: {API_KEY}
@@ -521,6 +581,10 @@ X-API-Key: {API_KEY}
   - `size` - Items per page (default: 50, maximum: 100)
 
 **Note:** Only returns active (non-deleted) runs. Soft-deleted runs are automatically excluded from results.
+
+> **💡 Tip:** Use **Global Search** for quick lookups when you don't know the exact field, or **Query Process Runs** for precise filtering with multiple criteria and sorting.
+
+> **📚 Detailed Documentation:** See [documentation/search_with_matches.md](documentation/search_with_matches.md) for comprehensive search examples, implementation details, and client code samples.
 
 #### **Get Process Run Details**
 ```http
