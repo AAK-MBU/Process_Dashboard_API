@@ -35,6 +35,7 @@ from app.models.retention import (
     NeutralizationResult,
     RetentionUpdate,
 )
+from app.models.search import MatchedField
 
 __all__ = [
     # Enums
@@ -74,6 +75,8 @@ __all__ = [
     "RetentionUpdate",
     "CleanupResult",
     "CleanupStats",
+    # Search
+    "MatchedField",
 ]
 
 # Rebuild models to resolve forward references

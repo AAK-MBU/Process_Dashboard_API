@@ -1,13 +1,31 @@
 """API endpoints for managing process runs."""
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    status,
+)
 from fastapi_pagination import Page, Params
 from fastapi_pagination.ext.sqlmodel import paginate
 
-from app.api.dependencies import RequireAdminKey, RunServiceDep
+from app.api.dependencies import (
+    RequireAdminKey,
+    RunServiceDep,
+    SearchServiceDep,
+)
 from app.core.pagination import add_pagination_links
 from app.db.database import SessionDep
-from app.models import NeutralizationResult, ProcessRun, ProcessRunCreate, ProcessRunPublic
+from app.models import (
+    NeutralizationResult,
+    ProcessRun,
+    ProcessRunCreate,
+    ProcessRunPublic,
+    # SearchResultItem,
+)
 from app.services import DataRetentionService
 
 router = APIRouter()
@@ -26,6 +44,66 @@ def create_process_run(
     """Create a new process run."""
     run = service.create_run_with_steps(run_in)
     return ProcessRun.model_validate(run)
+
+
+@router.get(
+    "/search",
+    response_model=dict,
+    summary="Global search across process runs",
+    description=(
+        "Search across all searchable fields and return which fields "
+        "matched for each result. Includes field names and matched values."
+    ),
+)
+def search_process_runs(
+    request: Request,
+    response: Response,
+    session: SessionDep,
+    search_service: SearchServiceDep,
+    q: str = Query(
+        ...,
+        min_length=1,
+        description="Search term (case-insensitive, partial match)",
+    ),
+    process_id: int | None = Query(
+        None,
+        description="Optional process ID to filter and include metadata search",
+    ),
+    params: Params = Depends(),
+) -> dict:
+    """
+    Global search across process runs with match annotations.
+
+    Searches across standard fields (entity_id, entity_name, status) and
+    optionally metadata fields if process_id is specified.
+
+    Returns search results with additional metadata showing which fields
+    matched the search term and their values.
+    """
+    statement = search_service.search_items(
+        search_params=q,
+        process_id=process_id,
+    )
+
+    # Paginate
+    page_data = paginate(session, statement, params)
+    add_pagination_links(request, response, page_data)
+
+    # Annotate results with match information
+    annotated_items = search_service.annotate_matches(
+        runs=list(page_data.items),
+        search_term=q,
+        process_id=process_id,
+    )
+
+    # Return paginated response with annotated items
+    return {
+        "items": annotated_items,
+        "total": page_data.total,
+        "page": page_data.page,
+        "size": page_data.size,
+        "pages": page_data.pages,
+    }
 
 
 @router.get(

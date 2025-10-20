@@ -12,6 +12,7 @@ from app.models import ApiKey
 from app.services.auth_service import AuthService
 from app.services.process_service import ProcessService
 from app.services.run_service import ProcessRunService
+from app.services.search_service import SearchService
 from app.services.step_run_service import StepRunService
 from app.services.step_service import StepService
 
@@ -24,6 +25,11 @@ def get_process_service(db: Session = Depends(get_session)) -> ProcessService:
 def get_run_service(db: Session = Depends(get_session)) -> ProcessRunService:
     """Dependency for getting ProcessRunService."""
     return ProcessRunService(db)
+
+
+def get_search_service(db: Session = Depends(get_session)) -> SearchService:
+    """Dependency for getting SearchService."""
+    return SearchService(db)
 
 
 def get_step_service(db: Session = Depends(get_session)) -> StepService:
@@ -98,6 +104,7 @@ def require_admin_key(api_key: ApiKey = Depends(verify_api_key)) -> ApiKey:
 ProcessServiceDep = Annotated[ProcessService, Depends(get_process_service)]
 ProcessRunServiceDep = Annotated[ProcessRunService, Depends(get_run_service)]
 RunServiceDep = Annotated[ProcessRunService, Depends(get_run_service)]
+SearchServiceDep = Annotated[SearchService, Depends(get_search_service)]
 StepRunServiceDep = Annotated[StepRunService, Depends(get_step_run_service)]
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 

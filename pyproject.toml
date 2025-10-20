@@ -1,6 +1,6 @@
 [project]
 name = "Process_Dashboard_API"
-version = "2.2.0"
+version = "2.3.0"
 description = "API for process visualization"
 authors = [
     {name = "MBU", email = "rpa@mbu.aarhus.dk"}
@@ -8,7 +8,7 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
-keywords = ["fastapi", "process-visualization", "process-monitor", "process-dashboard", "api", "jwt", "sqlmodel"]
+keywords = ["fastapi", "process-visualization", "process-monitor", "process-dashboard", "api"]
 
 dependencies = [
     "fastapi>=0.109.0",
