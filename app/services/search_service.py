@@ -30,7 +30,7 @@ class SearchService:
         or_conditions.append(ProcessRun.entity_name.ilike(search_pattern))
         or_conditions.append(ProcessRun.status.ilike(search_pattern))
 
-        if process_id:
+        if process_id is not None:
             statement = statement.where(ProcessRun.process_id == process_id)
 
             try:
@@ -46,7 +46,7 @@ class SearchService:
 
         statement = statement.where(or_(*or_conditions))
 
-        if process_id:
+        if process_id is not None:
             try:
                 fields_info = self.process_service.get_searchable_fields(process_id)
                 metadata_fields = fields_info.get("metadata_fields", {})
@@ -78,7 +78,7 @@ class SearchService:
         annotated = []
 
         searchable_meta: list[str] = []
-        if process_id:
+        if process_id is not None:
             try:
                 fields_info = self.process_service.get_searchable_fields(process_id)
                 searchable_meta = list(fields_info.get("metadata_fields", {}).keys())

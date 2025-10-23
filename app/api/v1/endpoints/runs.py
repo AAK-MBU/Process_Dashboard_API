@@ -140,6 +140,11 @@ def list_process_runs(
         None,
         description=("Metadata filter in format 'field:value'. Can be specified multiple times"),
     ),
+    # Step failure filter
+    failed_at: int | None = Query(
+        None,
+        description="Filter runs that failed at a specific step_id",
+    ),
     # Sorting
     order_by: str = Query("created_at", description="Field to sort by"),
     sort_direction: str = Query("desc", regex="^(asc|desc)$"),
@@ -158,6 +163,7 @@ def list_process_runs(
             finished_after=finished_after,
             finished_before=finished_before,
             meta_filter=meta_filter,
+            failed_at=failed_at,
             order_by=order_by,
             sort_direction=sort_direction,
             include_deleted=False,
