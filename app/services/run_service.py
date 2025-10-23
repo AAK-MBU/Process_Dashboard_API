@@ -155,6 +155,7 @@ class ProcessRunService:
         finished_after: str | None = None,
         finished_before: str | None = None,
         meta_filter: list[str] | None = None,
+        failed_at: int | None = None,
         order_by: str = "created_at",
         sort_direction: str = "desc",
         include_deleted: bool = False,
@@ -166,6 +167,7 @@ class ProcessRunService:
         Args:
             include_deleted: If True, include soft-deleted runs
             include_neutralized: If True, include neutralized runs
+            failed_at: If provided, filter runs that failed at this specific step_id
 
         Returns:
             SQLModel Select statement with all filters and sorting applied
@@ -189,6 +191,7 @@ class ProcessRunService:
             statement, started_after, started_before, finished_after, finished_before
         )
         statement = self._apply_metadata_filters(statement, meta_filter)
+        statement = self._apply_failed_at_filter(statement, failed_at)
         statement = self._apply_sorting(statement, order_by, sort_direction)
 
         return statement
@@ -202,7 +205,7 @@ class ProcessRunService:
         status: str | None,
     ):
         """Apply basic filters to query."""
-        if process_id:
+        if process_id is not None:
             statement = statement.where(ProcessRun.process_id == process_id)
         if entity_id:
             statement = statement.where(ProcessRun.entity_id == entity_id)
@@ -280,6 +283,29 @@ class ProcessRunService:
                     )
                     sql_params[param_name] = value
                 statement = statement.where(text(" OR ".join(or_conditions))).params(**sql_params)
+        return statement
+
+    def _apply_failed_at_filter(self, statement, failed_at: int | None):
+        """Apply filter for runs that failed at a specific step_id.
+
+        Args:
+            statement: The SQLModel statement to filter
+            failed_at: The step_id to filter by
+
+        Returns:
+            Filtered statement showing only runs that failed at the given step
+        """
+        if failed_at is None:
+            return statement
+
+        # Join with ProcessStepRun and filter for failed steps
+        from app.models.process_step_run import ProcessStepRun
+
+        statement = statement.join(ProcessStepRun).where(
+            ProcessStepRun.step_id == failed_at,
+            ProcessStepRun.status == "failed"
+        )
+
         return statement
 
     def _apply_sorting(self, statement, order_by: str, sort_direction: str):
