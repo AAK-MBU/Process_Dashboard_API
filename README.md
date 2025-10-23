@@ -443,27 +443,6 @@ GET /api/v1/processes/{process_id}
 X-API-Key: {API_KEY}
 ```
 
-### **Process Execution Management**
-
-#### **Start Process Execution**
-```http
-POST /api/v1/runs/
-X-API-Key: {API_KEY}
-Content-Type: application/json
-
-{
-  "process_id": 1,
-  "entity_id": "CUST-20251003-001",
-  "entity_name": "Acme Corporation",
-  "meta": {
-    "initiated_by": "api.integration",
-    "priority": "high",
-    "environment": "production",
-    "correlation_id": "req-20251003-12345"
-  }
-}
-```
-
 #### **Global Search Across Runs**
 ```http
 GET /api/v1/runs/search?q={search_term}&process_id={id}
@@ -536,6 +515,7 @@ X-API-Key: {API_KEY}
 &created_before=2025-10-31T23:59:59Z
 &meta_filter=priority:high
 &meta_filter=environment:production
+&failed_at=3
 &order_by=created_at
 &sort_direction=desc
 &page=1
@@ -573,6 +553,7 @@ X-API-Key: {API_KEY}
   - `started_after`, `started_before` - Date filters (ISO 8601 format)
   - `finished_after`, `finished_before` - Date filters (ISO 8601 format)
   - `meta_filter` - Filter by metadata (format: `field:value`). Can be specified multiple times for multiple filters. Multiple values for the same field are OR'd together, different fields are AND'd together.
+  - `failed_at` - Filter runs that failed at a specific step_id (e.g., `failed_at=3` shows only runs that failed at step 3)
 - **Sorting:**
   - `order_by` - Field to sort by (default: `created_at`)
   - `sort_direction` - Sort direction: `asc` or `desc` (default: `desc`)
@@ -1219,6 +1200,13 @@ X-API-Key: {API_KEY}
 ```http
 # Filter by time periods
 GET /api/v1/runs/?created_after=2025-10-01T00:00:00Z&created_before=2025-10-31T23:59:59Z
+X-API-Key: {API_KEY}
+```
+
+#### **Failed Step Filtering**
+```http
+# Show all runs that failed at a specific step
+GET /api/v1/runs/?process_id=1&failed_at=3
 X-API-Key: {API_KEY}
 ```
 
