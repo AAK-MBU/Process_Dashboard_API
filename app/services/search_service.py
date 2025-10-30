@@ -85,6 +85,8 @@ class SearchService:
             except Exception:
                 pass
 
+        from app.models import ProcessRunPublic
+
         for run in runs:
             matches: list[MatchedField] = []
 
@@ -112,6 +114,10 @@ class SearchService:
                             )
                         )
 
-            annotated.append({"run": run, "steps": run.steps, "matches": matches})
+            # Use ProcessRunPublic for serialization
+            run_public = ProcessRunPublic.model_validate(run)
+            run_dict = run_public.model_dump()
+            run_dict["matches"] = [m.model_dump() for m in matches]
+            annotated.append(run_dict)
 
         return annotated
