@@ -12,6 +12,7 @@ from app.models import (
     ProcessRun,
     ProcessRunPublic,
 )
+from app.models.enums import ProcessRunStatus
 
 router = APIRouter()
 
@@ -39,7 +40,19 @@ def get_dashboard_overview(*, session: SessionDep, process_id: int) -> dict[str,
         "process": ProcessPublic.model_validate(process),
         "runs": [ProcessRunPublic.model_validate(run) for run in runs],
         "total_runs": len(runs),
-        "completed_runs": sum(1 for run in runs if run.status == "completed"),
-        "failed_runs": sum(1 for run in runs if run.status == "failed"),
-        "running_runs": sum(1 for run in runs if run.status == "running"),
+        "completed_runs": sum(
+            1 for run in runs if run.status == ProcessRunStatus.COMPLETED
+        ),
+        "failed_runs": sum(
+            1 for run in runs if run.status == ProcessRunStatus.FAILED
+        ),
+        "running_runs": sum(
+            1 for run in runs if run.status == ProcessRunStatus.RUNNING
+        ),
+        "cancelled_runs": sum(
+            1 for run in runs if run.status == ProcessRunStatus.CANCELLED
+        ),
+        "pending_runs": sum(
+            1 for run in runs if run.status == ProcessRunStatus.PENDING
+        ),
     }
