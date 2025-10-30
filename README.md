@@ -455,22 +455,30 @@ X-API-Key: {API_KEY}
 ?q=12345678                                    # Search by entity ID
 ```
 
+
 **Response:**
 ```json
 {
   "items": [
     {
-      "run": {
-        "id": 42,
-        "process_id": 1,
-        "entity_id": "CUST-001",
-        "entity_name": "Viby Clinic",
-        "status": "completed",
-        "meta": {
-          "clinic": "Viby",
-          "region": "Central"
-        }
+      "id": 42,
+      "process_id": 1,
+      "entity_id": "CUST-001",
+      "entity_name": "Viby Clinic",
+      "status": "completed",
+      "meta": {
+        "clinic": "Viby",
+        "region": "Central"
       },
+      "steps": [
+        {
+          "id": 101,
+          "name": "Step 1",
+          "status": "completed"
+          // ... other step fields ...
+        }
+        // ... more steps ...
+      ],
       "matches": [
         {
           "field": "entity_name",
@@ -480,15 +488,6 @@ X-API-Key: {API_KEY}
           "field": "meta.clinic",
           "value": "Viby"
         }
-      ],
-      "steps": [
-        {
-          "id": 101,
-          "name": "Step 1",
-          "status": "completed"
-          // ... other step fields ...
-        }
-        // ... more steps ...
       ]
     }
   ],
