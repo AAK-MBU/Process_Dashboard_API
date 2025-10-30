@@ -112,6 +112,6 @@ class SearchService:
                             )
                         )
 
-            annotated.append({"run": run, "matches": matches})
+            annotated.append({"run": run, "steps": run.steps, "matches": matches})
 
         return annotated
