@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: process-visualization-api
+    container_name: process-dashboard-api
     env_file:
       - .env
     ports:
@@ -11,6 +11,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./app:/app/app
+      - ./.env:/app/.env:ro
     networks:
       - process-network
 

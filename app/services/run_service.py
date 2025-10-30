@@ -300,10 +300,11 @@ class ProcessRunService:
 
         # Join with ProcessStepRun and filter for failed steps
         from app.models.process_step_run import ProcessStepRun
+        from app.models.enums import StepRunStatus
 
         statement = statement.join(ProcessStepRun).where(
             ProcessStepRun.step_id == failed_at,
-            ProcessStepRun.status == "failed"
+            ProcessStepRun.status == StepRunStatus.FAILED
         )
 
         return statement

@@ -104,7 +104,9 @@ def get_process_searchable_fields(*, session: SessionDep, process_id: int) -> di
         "status": {
             "type": "enum",
             "description": "Process run status",
-            "values": ["pending", "running", "completed", "failed"],
+            "values": [
+                "pending", "running", "completed", "failed", "cancelled"
+            ],
             "sortable": True,
             "filterable": True,
         },
