@@ -153,7 +153,7 @@ class ProcessService:
             "status": {
                 "type": "enum",
                 "description": "Process run status",
-                "values": ["pending", "running", "completed", "failed"],
+                "values": ["pending", "running", "completed", "failed", "cancelled"],
                 "sortable": True,
                 "filterable": True,
             },

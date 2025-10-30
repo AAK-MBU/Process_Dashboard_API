@@ -67,18 +67,53 @@ class ProcessRun(ProcessRunBase, TimestampsMixin, table=True):
 
         step_statuses = [step.status for step in self.steps]
 
-        if StepRunStatus.RUNNING in step_statuses:
-            self.status = ProcessRunStatus.RUNNING
-        elif StepRunStatus.FAILED in step_statuses:
+        # Priority 1: If run is explicitly cancelled, keep it cancelled
+        if self.status == ProcessRunStatus.CANCELLED:
+            return self
+
+        # Priority 2: If any step failed, mark as failed
+        if StepRunStatus.FAILED in step_statuses:
             self.status = ProcessRunStatus.FAILED
-        elif StepRunStatus.SUCCESS in step_statuses:
-            self.status = ProcessRunStatus.COMPLETED
-        elif StepRunStatus.SUCCESS in step_statuses and StepRunStatus.PENDING in step_statuses:
+        # Priority 3: If any step is cancelled, mark as cancelled
+        elif StepRunStatus.CANCELLED in step_statuses:
+            self.status = ProcessRunStatus.CANCELLED
+        # Priority 4: If any step is running, mark as running
+        elif StepRunStatus.RUNNING in step_statuses:
             self.status = ProcessRunStatus.RUNNING
+        # Priority 5: Check if all required steps are complete
+        elif self._all_required_steps_complete(step_statuses):
+            self.status = ProcessRunStatus.COMPLETED
+        # Priority 6: If there are pending steps, mark as running
+        elif StepRunStatus.PENDING in step_statuses:
+            self.status = ProcessRunStatus.RUNNING
+        # Priority 7: Default to pending
         else:
             self.status = ProcessRunStatus.PENDING
 
         return self
+
+    def _all_required_steps_complete(
+        self, step_statuses: list[StepRunStatus]
+    ) -> bool:
+        """Check if all required steps are complete (success).
+
+        Only optional steps don't count as required for completion.
+        Cancelled steps are blocking and prevent completion.
+        """
+        blocking_statuses = [
+            StepRunStatus.PENDING,
+            StepRunStatus.RUNNING,
+            StepRunStatus.FAILED,
+            StepRunStatus.CANCELLED
+        ]
+
+        for status in step_statuses:
+            if status in blocking_statuses:
+                return False
+            # Only SUCCESS and OPTIONAL steps don't block completion
+
+        # At least one step must be successful for completion
+        return StepRunStatus.SUCCESS in step_statuses
 
 
 class ProcessRunCreate(SQLModel):

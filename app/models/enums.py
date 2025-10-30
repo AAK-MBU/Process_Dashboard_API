@@ -10,6 +10,8 @@ class StepRunStatus(str, enum.Enum):
     RUNNING = "running"
     SUCCESS = "success"
     FAILED = "failed"
+    CANCELLED = "cancelled"
+    OPTIONAL = "optional"
 
 
 class ProcessRunStatus(str, enum.Enum):
@@ -19,3 +21,4 @@ class ProcessRunStatus(str, enum.Enum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"

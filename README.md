@@ -727,10 +727,26 @@ The API implements state management using SQLAlchemy 2.0 event handlers to autom
 
 When any step run's status changes, the parent process run's status is **automatically recalculated** based on all step statuses:
 
-- **Running** - If any step is currently running
-- **Failed** - If any step has failed (and none are running)
-- **Completed** - If all steps are successful
-- **Pending** - Initial state (no steps started yet)
+  - **Failed** - If any step has failed (highest priority)
+  - **Cancelled** - If any step is cancelled (takes precedence over running/completed)
+  - **Running** - If any step is currently running (and none are failed/cancelled)
+  - **Completed** - If all required steps are successful (optional steps do not block completion)
+  - **Pending** - Initial state (no steps started yet, or only optional steps)
+
+**Status Calculation Priority Order:**
+
+1. If the run itself is explicitly cancelled, keep it cancelled
+2. If any step is failed, the run is **failed**
+3. If any step is cancelled, the run is **cancelled**
+4. If any step is running, the run is **running**
+5. If all required steps are successful (SUCCESS or OPTIONAL), the run is **completed**
+6. If any step is pending, the run is **running**
+7. Otherwise, the run is **pending**
+
+**Notes:**
+- "Cancelled" steps block completion and take precedence over running/completed.
+- "Failed" has the highest priority.
+- "Optional" steps do not block completion.
 
 **How it works:**
 ```mermaid
@@ -746,7 +762,9 @@ sequenceDiagram
     EventHandler->>Database: Query all step statuses for parent run
     EventHandler->>Database: Recalculate and update run.status
     Database->>Client: Return updated step_run
-    Note over EventHandler: Parent status automatically updated!
+
+  Note over EventHandler: Parent status automatically updated!
+  Note over EventHandler: Cancelled steps set run to cancelled, failed steps set run to failed.
 ```
 
 #### **2. Step Index Auto-Population**
