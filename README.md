@@ -443,6 +443,7 @@ GET /api/v1/processes/{process_id}
 X-API-Key: {API_KEY}
 ```
 
+
 #### **Global Search Across Runs**
 ```http
 GET /api/v1/runs/search?q={search_term}&process_id={id}
@@ -479,6 +480,15 @@ X-API-Key: {API_KEY}
           "field": "meta.clinic",
           "value": "Viby"
         }
+      ],
+      "steps": [
+        {
+          "id": 101,
+          "name": "Step 1",
+          "status": "completed"
+          // ... other step fields ...
+        }
+        // ... more steps ...
       ]
     }
   ],
@@ -496,6 +506,7 @@ X-API-Key: {API_KEY}
 - **Partial matching** - Finds substrings within values
 - **Standard fields** - Always searches: `entity_id`, `entity_name`, `status`
 - **Metadata fields** - Searches custom fields when `process_id` is provided
+- **Steps included** – Each search result now includes an array of related steps for the process run.
 
 **Query Parameters:**
 - `q` - Search term (required, minimum 1 character)
