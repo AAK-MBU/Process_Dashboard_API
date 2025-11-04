@@ -622,6 +622,12 @@ Content-Type: application/json
 }
 ```
 
+> **Behavior:**
+> - If you omit `finished_at` in the payload and set `status` to a finished state (`success` or `failed`), the system will automatically set `finished_at` to the current time.
+> - If you provide a `finished_at` value, it will be used as-is.
+> - If you omit `started_at` in the payload and set `status` to `running`, the system will automatically set `started_at` to the current time.
+> - If you provide a `started_at` value, it will be used as-is.
+
 > **Note:** When a step run's status is updated, the parent process run's status is automatically recalculated and updated based on all step statuses. This is handled by SQLAlchemy event handlers.
 
 #### **Rerun Failed Step**

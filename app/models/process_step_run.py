@@ -1,9 +1,9 @@
 """ProcessStepRun models."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional
 
-from sqlalchemy import JSON
+from sqlalchemy import JSON, event
 from sqlmodel import Column, Field, Relationship, SQLModel
 
 from app.models.base import TimestampsMixin
@@ -74,3 +74,18 @@ class ProcessStepRunPublic(ProcessStepRunBase):
     id: int
     created_at: datetime
     updated_at: datetime
+
+
+@event.listens_for(ProcessStepRun, "before_update")
+def set_finished_at(mapper, connection, target):
+    """Automatically set finished_at when status indicates completion."""
+    finished_statuses = [StepRunStatus.SUCCESS, StepRunStatus.FAILED]
+    if target.status in finished_statuses and target.finished_at is None:
+        target.finished_at = datetime.now(timezone.utc)
+
+
+@event.listens_for(ProcessStepRun, "before_update")
+def set_started_at(mapper, connection, target):
+    """Automatically set started_at when status changes to running."""
+    if target.status == StepRunStatus.RUNNING and target.started_at is None:
+        target.started_at = datetime.now(timezone.utc)
