@@ -59,9 +59,19 @@ def update_step_run(
     if not step_run:
         raise HTTPException(status_code=404, detail="Process step run not found")
 
-    # Update fields
-    for key, value in update_in.model_dump(exclude_unset=True).items():
+    # Apply updates
+    update_data = update_in.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
         setattr(step_run, key, value)
+
+    # If finished_at is not supplied and status is a finished state, set finished_at to None
+    finished_statuses = [StepRunStatus.SUCCESS, StepRunStatus.FAILED]
+    if "finished_at" not in update_data and update_in.status in finished_statuses:
+        step_run.finished_at = None
+
+    # If started_at is not supplied and status is RUNNING, set started_at to None
+    if "started_at" not in update_data and update_in.status == StepRunStatus.RUNNING:
+        step_run.started_at = None
 
     session.add(step_run)
     session.commit()
@@ -131,6 +141,28 @@ def list_step_runs_for_run(*, session: SessionDep, run_id: int) -> list[ProcessS
     )
     step_runs = session.exec(statement).all()
     return list(step_runs)
+
+
+@router.get(
+    "/run/{run_id}/step/{step_id}",
+    response_model=ProcessStepRunPublic,
+    summary="Get a step run by run and step",
+    description="Retrieve a specific step run for a given process run and step.",
+)
+def get_step_run_by_run_and_step(
+    *, session: SessionDep, run_id: int, step_id: int
+) -> ProcessStepRun:
+    """Get a specific step run by process run ID and step ID."""
+    statement = (
+        select(ProcessStepRun)
+        .where(ProcessStepRun.run_id == run_id)
+        .where(ProcessStepRun.step_id == step_id)
+        .where(ProcessStepRun.deleted_at.is_(None))
+    )
+    step_run = session.exec(statement).first()
+    if not step_run:
+        raise HTTPException(status_code=404, detail="Step run not found for given run and step")
+    return step_run
 
 
 @router.get(
