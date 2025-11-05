@@ -14,6 +14,7 @@ from app.models.process_run import (
     ProcessRun,
     ProcessRunBase,
     ProcessRunCreate,
+    ProcessRunMetadataUpdate,
     ProcessRunPublic,
 )
 from app.models.process_step import (
@@ -57,6 +58,7 @@ __all__ = [
     "ProcessRun",
     "ProcessRunBase",
     "ProcessRunCreate",
+    "ProcessRunMetadataUpdate",
     "ProcessRunPublic",
     # Process Step Run
     "ProcessStepRun",

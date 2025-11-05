@@ -80,6 +80,53 @@ class ProcessRunService:
             max_reruns=max_reruns,
         )
 
+    def update_run_metadata(self, run_id: int, metadata_update: dict[str, any]) -> ProcessRun:
+        """
+        Update only existing metadata fields in a process run.
+
+        Args:
+            run_id: ID of the process run to update
+            metadata_update: Dictionary of metadata fields to update
+
+        Returns:
+            Updated ProcessRun object
+
+        Raises:
+            RunNotFoundError: If run doesn't exist
+            ValueError: If any provided metadata keys don't exist in current
+                metadata
+        """
+        run = self.get_run(run_id)
+
+        # Check that all provided keys exist in current metadata
+        current_meta = run.meta or {}
+
+        # If the run has no metadata and we're trying to add some, reject it
+        if not current_meta and metadata_update:
+            raise ValueError(
+                "Cannot update metadata: run has no existing metadata fields. Existing keys: []"
+            )
+
+        unknown_keys = set(metadata_update.keys()) - set(current_meta.keys())
+
+        if unknown_keys:
+            unknown_keys_list = sorted(list(unknown_keys))
+            existing_keys_list = sorted(list(current_meta.keys()))
+            raise ValueError(
+                f"Unknown metadata keys: {unknown_keys_list}. Existing keys: {existing_keys_list}"
+            )
+
+        # Update the metadata with new values
+        updated_meta = current_meta.copy()
+        updated_meta.update(metadata_update)
+
+        # Update the run
+        run.meta = updated_meta
+        self.db.commit()
+        self.db.refresh(run)
+
+        return run
+
     def get_run(self, run_id: int) -> ProcessRun:
         """
         Get a process run by ID.
@@ -299,12 +346,11 @@ class ProcessRunService:
             return statement
 
         # Join with ProcessStepRun and filter for failed steps
-        from app.models.process_step_run import ProcessStepRun
         from app.models.enums import StepRunStatus
+        from app.models.process_step_run import ProcessStepRun
 
         statement = statement.join(ProcessStepRun).where(
-            ProcessStepRun.step_id == failed_at,
-            ProcessStepRun.status == StepRunStatus.FAILED
+            ProcessStepRun.step_id == failed_at, ProcessStepRun.status == StepRunStatus.FAILED
         )
 
         return statement

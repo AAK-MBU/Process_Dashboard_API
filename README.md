@@ -583,6 +583,29 @@ GET /api/v1/runs/{run_id}
 X-API-Key: {API_KEY}
 ```
 
+#### **Update Process Run Metadata**
+```http
+PATCH /api/v1/runs/{run_id}/metadata
+X-API-Key: {API_KEY}
+Content-Type: application/json
+
+{
+  "meta": {
+    "priority": "high",
+    "source": "automated"
+  }
+}
+```
+
+**Security:** Requires admin API key.
+
+**Behavior:** Only updates existing metadata fields. Returns HTTP 400 error if any unknown metadata keys are provided.
+
+**Example:**
+- If run has metadata `{"priority": "low", "status": "pending"}`
+- And you send `{"priority": "high", "status": "completed"}` → Success
+- And you send `{"priority": "high", "new_field": "value"}` → HTTP 400 Error: "Unknown metadata keys: ['new_field']. Existing keys: ['priority', 'status']"
+
 ### **Step Management**
 
 #### **List Process Steps**
@@ -628,7 +651,11 @@ Content-Type: application/json
 > - If you omit `started_at` in the payload and set `status` to `running`, the system will automatically set `started_at` to the current time.
 > - If you provide a `started_at` value, it will be used as-is.
 
-> **Note:** When a step run's status is updated, the parent process run's status is automatically recalculated and updated based on all step statuses. This is handled by SQLAlchemy event handlers.
+> **Note:** When a step run's status is updated, the parent process run's status is automatically recalculated and updated based on all step statuses. Additionally, the process run's `started_at` and `finished_at` timestamps are automatically managed:
+> - `started_at` is set when transitioning from PENDING to RUNNING
+> - `finished_at` is set when transitioning to terminal states (COMPLETED, FAILED, CANCELLED)
+> - `finished_at` is cleared when transitioning from terminal back to non-terminal states
+> All automation is handled by SQLAlchemy event handlers.
 
 #### **Rerun Failed Step**
 ```http
@@ -781,9 +808,30 @@ sequenceDiagram
 
   Note over EventHandler: Parent status automatically updated!
   Note over EventHandler: Cancelled steps set run to cancelled, failed steps set run to failed.
+  Note over EventHandler: Timestamps are automatically managed!
 ```
 
-#### **2. Step Index Auto-Population**
+#### **2. Process Run Timestamp Automation**
+
+Process run timestamps (`started_at` and `finished_at`) are **automatically managed** based on status transitions:
+
+**Timestamp Rules:**
+- **`started_at`** - Set when transitioning from PENDING to RUNNING
+- **`finished_at`** - Set when transitioning to terminal states (COMPLETED, FAILED, CANCELLED)
+- **`finished_at`** - Cleared when transitioning from terminal back to non-terminal states
+
+**Terminal States:** COMPLETED, FAILED, CANCELLED  
+**Non-Terminal States:** PENDING, RUNNING
+
+**Example Flow:**
+```
+PENDING → RUNNING     (started_at = now, finished_at = null)
+RUNNING → COMPLETED   (started_at unchanged, finished_at = now)
+COMPLETED → RUNNING   (started_at unchanged, finished_at = null)
+RUNNING → FAILED      (started_at unchanged, finished_at = now)
+```
+
+#### **3. Step Index Auto-Population**
 
 When creating step runs, the `step_index` field is **automatically populated** from the related process step's index:
 
