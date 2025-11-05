@@ -1,6 +1,6 @@
 """ProcessRun models."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional
 
 from sqlalchemy import JSON
@@ -24,7 +24,9 @@ class ProcessRunBase(SQLModel):
     meta: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     entity_id: str = Field(index=True, max_length=100)
     entity_name: str | None = Field(default=None, max_length=255)
-    status: ProcessRunStatus = Field(default=ProcessRunStatus.PENDING, index=True)
+    status: ProcessRunStatus = Field(
+        default=ProcessRunStatus.PENDING, index=True, max_length=20
+    )
     started_at: datetime | None = Field(default=None)
     finished_at: datetime | None = Field(default=None)
     process_id: int | None = Field(default=None, foreign_key="process.id")
@@ -66,6 +68,7 @@ class ProcessRun(ProcessRunBase, TimestampsMixin, table=True):
             return self
 
         step_statuses = [step.status for step in self.steps]
+        previous_status = self.status
 
         # Priority 1: If run is explicitly cancelled, keep it cancelled
         if self.status == ProcessRunStatus.CANCELLED:
@@ -90,11 +93,12 @@ class ProcessRun(ProcessRunBase, TimestampsMixin, table=True):
         else:
             self.status = ProcessRunStatus.PENDING
 
+        # Auto-set finished_at when transitioning to terminal status
+        self._update_finished_at(previous_status, self.status)
+
         return self
 
-    def _all_required_steps_complete(
-        self, step_statuses: list[StepRunStatus]
-    ) -> bool:
+    def _all_required_steps_complete(self, step_statuses: list[StepRunStatus]) -> bool:
         """Check if all required steps are complete (success).
 
         Only optional steps don't count as required for completion.
@@ -104,7 +108,7 @@ class ProcessRun(ProcessRunBase, TimestampsMixin, table=True):
             StepRunStatus.PENDING,
             StepRunStatus.RUNNING,
             StepRunStatus.FAILED,
-            StepRunStatus.CANCELLED
+            StepRunStatus.CANCELLED,
         ]
 
         for status in step_statuses:
@@ -115,6 +119,46 @@ class ProcessRun(ProcessRunBase, TimestampsMixin, table=True):
         # At least one step must be successful for completion
         return StepRunStatus.SUCCESS in step_statuses
 
+    def _update_finished_at(
+        self, previous_status: ProcessRunStatus, new_status: ProcessRunStatus
+    ) -> None:
+        """Update finished_at timestamp when transitioning to terminal status.
+
+        Args:
+            previous_status: The status before the change
+            new_status: The new status after the change
+        """
+        terminal_statuses = {
+            ProcessRunStatus.COMPLETED,
+            ProcessRunStatus.FAILED,
+            ProcessRunStatus.CANCELLED,
+        }
+
+        non_terminal_statuses = {
+            ProcessRunStatus.PENDING,
+            ProcessRunStatus.RUNNING,
+        }
+
+        # Set finished_at when transitioning from non-terminal to terminal
+        if (
+            previous_status in non_terminal_statuses
+            and new_status in terminal_statuses
+            and self.finished_at is None
+        ):
+            self.finished_at = datetime.now(timezone.utc)
+
+        # Clear finished_at when transitioning from terminal to non-terminal
+        elif previous_status in terminal_statuses and new_status in non_terminal_statuses:
+            self.finished_at = None
+
+        # Set started_at when transitioning from PENDING to RUNNING
+        if (
+            previous_status == ProcessRunStatus.PENDING
+            and new_status == ProcessRunStatus.RUNNING
+            and self.started_at is None
+        ):
+            self.started_at = datetime.now(timezone.utc)
+
 
 class ProcessRunCreate(SQLModel):
     """Schema for creating a process run."""
@@ -123,6 +167,15 @@ class ProcessRunCreate(SQLModel):
     entity_name: str | None = None
     meta: dict[str, Any] = Field(default_factory=dict)
     process_id: int
+
+
+class ProcessRunMetadataUpdate(SQLModel):
+    """Schema for updating existing metadata fields only."""
+
+    meta: dict[str, Any] = Field(
+        default_factory=dict,
+        description=("Metadata fields to update. Only existing fields will be updated."),
+    )
 
 
 class ProcessRunPublic(ProcessRunBase):

@@ -23,6 +23,7 @@ from app.models import (
     NeutralizationResult,
     ProcessRun,
     ProcessRunCreate,
+    ProcessRunMetadataUpdate,
     ProcessRunPublic,
     # SearchResultItem,
 )
@@ -191,6 +192,35 @@ def get_process_run(*, session: SessionDep, run_id: int) -> ProcessRun:
     if not run or run.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Process run not found")
     return run
+
+
+@router.patch(
+    "/{run_id}/metadata",
+    response_model=ProcessRunPublic,
+    summary="Update existing metadata fields",
+    description=(
+        "Update only existing metadata fields in a process run. "
+        "New fields will not be added, only existing fields will be updated."
+    ),
+)
+def update_run_metadata(
+    *,
+    session: SessionDep,
+    run_id: int,
+    metadata_update: ProcessRunMetadataUpdate,
+    service: RunServiceDep,
+    admin_key: RequireAdminKey,
+) -> ProcessRun:
+    """Update existing metadata fields in a process run."""
+    run = session.get(ProcessRun, run_id)
+    if not run or run.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Process run not found")
+
+    try:
+        updated_run = service.update_run_metadata(run_id, metadata_update.meta)
+        return updated_run
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.delete(
