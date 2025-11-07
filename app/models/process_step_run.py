@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 class ProcessStepRunBase(SQLModel):
     """Base model for ProcessStepRun."""
 
-    status: StepRunStatus = Field(default=StepRunStatus.PENDING, max_length=20)
+    status: StepRunStatus = Field(default=StepRunStatus.PENDING, max_length=25)
     started_at: datetime | None = Field(default=None)
     finished_at: datetime | None = Field(default=None)
     failure: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
