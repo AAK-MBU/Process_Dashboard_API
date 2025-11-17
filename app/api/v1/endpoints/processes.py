@@ -7,7 +7,11 @@ from fastapi_pagination import Page, Params
 from fastapi_pagination.ext.sqlmodel import paginate
 from sqlmodel import select
 
-from app.api.dependencies import RequireAdminKey
+from app.api.dependencies import (
+    ProcessServiceDep,
+    RequireAdminKey,
+    RunServiceDep,
+)
 from app.core.pagination import add_pagination_links
 from app.db.database import SessionDep
 from app.models import Process, ProcessCreate, ProcessPublic, RetentionUpdate
@@ -71,115 +75,46 @@ def get_process(*, session: SessionDep, process_id: int) -> Process:
 
 
 @router.get(
-    "/{process_id}/searchable-fields",
-    summary="Get all searchable fields for process runs",
-    description="Get complete overview of all searchable/sortable fields",
+    "/{process_id}/filter-metadata",
+    summary="Get combined filter metadata for process",
+    description=(
+        "Get all searchable/filterable field definitions AND "
+        "available metadata filter values in a single request. "
+        "Combines data from field schemas and actual run data."
+    ),
 )
-def get_process_searchable_fields(*, session: SessionDep, process_id: int) -> dict[str, Any]:
-    """Get all searchable fields for a process."""
-    process = session.get(Process, process_id)
-    if not process:
-        raise HTTPException(status_code=404, detail="Process not found")
+def get_filter_metadata(
+    *,
+    process_service: ProcessServiceDep,
+    run_service: RunServiceDep,
+    process_id: int,
+) -> dict[str, Any]:
+    """
+    Get combined filter metadata for a process.
 
-    # Standard fields that are always available
-    standard_fields = {
-        "id": {
-            "type": "integer",
-            "description": "Process run ID",
-            "sortable": True,
-            "filterable": False,
+    Returns both:
+    - Field definitions (types, descriptions, sortable/filterable info)
+    - Actual metadata filter values from existing runs
+
+    This single endpoint provides all the data needed to build
+    a complete search/filter UI.
+
+    Example response:
+    {
+        "process_id": 1,
+        "process_name": "Aktindsigt Process",
+        "searchable_fields": {
+            "standard_fields": {...},
+            "metadata_fields": {...}
         },
-        "entity_id": {
-            "type": "string",
-            "description": "Entity identifier (e.g., CPR, case number)",
-            "sortable": True,
-            "filterable": True,
+        "metadata_filters": {
+            "clinic": ["Viby", "Aarhus"],
+            "patient_id": ["12345", "67890"]
         },
-        "entity_name": {
-            "type": "string",
-            "description": "Entity name (e.g., person name)",
-            "sortable": True,
-            "filterable": True,
-        },
-        "status": {
-            "type": "enum",
-            "description": "Process run status",
-            "values": [
-                "pending", "running", "completed", "failed", "cancelled"
-            ],
-            "sortable": True,
-            "filterable": True,
-        },
-        "started_at": {
-            "type": "datetime",
-            "description": "When the process run started",
-            "sortable": True,
-            "filterable": True,
-            "filter_types": ["after", "before"],
-        },
-        "finished_at": {
-            "type": "datetime",
-            "description": "When the process run finished",
-            "sortable": True,
-            "filterable": True,
-            "filter_types": ["after", "before"],
-        },
-        "created_at": {
-            "type": "datetime",
-            "description": "When the record was created",
-            "sortable": True,
-            "filterable": False,
-        },
-        "updated_at": {
-            "type": "datetime",
-            "description": "When the record was last updated",
-            "sortable": True,
-            "filterable": False,
-        },
+        ...
     }
-
-    metadata_schema = process.meta.get("run_metadata_schema", {})
-
-    try:
-        actual_metadata_fields = list(metadata_schema.keys())
-    except Exception:
-        actual_metadata_fields = []
-
-    # Build metadata fields info
-    metadata_fields = {}
-    for field in actual_metadata_fields:
-        field_info = {
-            "type": metadata_schema.get(field, "string"),
-            "description": f"Metadata field: {field}",
-            "sortable": True,
-            "filterable": True,
-            "sortable_as": f"meta.{field}",
-            "filter_format": "meta_filter parameter: field:value",
-        }
-        metadata_fields[field] = field_info
-
-    return {
-        "process_id": process_id,
-        "process_name": process.name,
-        "standard_fields": standard_fields,
-        "metadata_fields": metadata_fields,
-        "all_sortable_fields": list(standard_fields.keys())
-        + [f"meta.{field}" for field in metadata_fields.keys()],
-        "all_filterable_fields": [
-            field for field, info in standard_fields.items() if info.get("filterable", False)
-        ]
-        + [f"meta.{field}" for field in metadata_fields.keys()],
-        "field_count": {
-            "standard": len(standard_fields),
-            "metadata": len(metadata_fields),
-            "total": len(standard_fields) + len(metadata_fields),
-        },
-        "filtering_help": {
-            "metadata": "Use meta_filter parameter with format 'field:value' or 'field1:value1,field2:value2'",
-            "dates": "Use ISO format for date filters (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)",
-            "partial_match": "entity_name supports partial matching",
-        },
-    }
+    """
+    return process_service.get_filter_metadata(process_id, run_service)
 
 
 @router.delete(

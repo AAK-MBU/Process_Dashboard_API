@@ -79,6 +79,67 @@ class ProcessService:
         processes = self.db.exec(statement).all()
         return list(processes)
 
+    def get_filter_metadata(self, process_id: int, run_service=None) -> dict[str, Any]:
+        """
+        Get combined filter metadata for a process.
+
+        This includes searchable/filterable field definitions AND
+        actual metadata filter values from existing runs.
+
+        Args:
+            process_id: ID of the process
+            run_service: RunService instance for getting filter options
+
+        Returns:
+            Dictionary containing field definitions and filter values
+
+        Raises:
+            ProcessNotFoundError: If process doesn't exist
+        """
+        process = self.get_process(process_id)
+
+        # Get field definitions
+        standard_fields = self._get_standard_fields()
+        metadata_schema = process.meta.get("run_metadata_schema", {})
+        metadata_fields = self._build_metadata_fields(metadata_schema)
+
+        # Get actual filter values if run_service provided
+        metadata_filter_values = {}
+        if run_service:
+            try:
+                metadata_filter_values = run_service.get_metadata_filter_options(
+                    process_id, self.db
+                )
+            except Exception:
+                # If error getting filter values, continue without
+                pass
+
+        return {
+            "process_id": process_id,
+            "process_name": process.name,
+            "searchable_fields": {
+                "standard_fields": standard_fields,
+                "metadata_fields": metadata_fields,
+            },
+            "metadata_filters": metadata_filter_values,
+            "all_sortable_fields": list(standard_fields.keys())
+            + [f"meta.{field}" for field in metadata_fields.keys()],
+            "all_filterable_fields": [
+                field for field, info in standard_fields.items() if info.get("filterable", False)
+            ]
+            + [f"meta.{field}" for field in metadata_fields.keys()],
+            "field_count": {
+                "standard": len(standard_fields),
+                "metadata": len(metadata_fields),
+                "total": len(standard_fields) + len(metadata_fields),
+            },
+            "filtering_help": {
+                "metadata": ("Use meta_filter parameter with format 'field:value'"),
+                "dates": ("Use ISO format for date filters (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)"),
+                "partial_match": "entity_name supports partial matching",
+            },
+        }
+
     def get_searchable_fields(self, process_id: int) -> dict[str, Any]:
         """
         Get all searchable and filterable fields for a process.
