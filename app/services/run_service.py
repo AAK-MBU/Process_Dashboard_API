@@ -372,3 +372,57 @@ class ProcessRunService:
             else:
                 statement = statement.order_by(column.asc())
         return statement
+
+    def get_metadata_filter_options(
+        self, process_id: int, session: Session
+    ) -> dict[str, list[str]]:
+        """
+        Get all unique metadata values for a specific process.
+
+        Returns a dictionary where keys are metadata field names and values
+        are sorted lists of unique values found in that field across all
+        process runs for the given process.
+
+        Args:
+            process_id: The process ID to get metadata options for
+            session: The database session
+
+        Returns:
+            Dictionary mapping field names to lists of unique values
+            Example: {"clinic": ["Viby", "Aarhus"], "cpr":
+                     ["123456", "789012"]}
+
+        Raises:
+            ProcessNotFoundError: If process doesn't exist
+        """
+        # Verify process exists
+        process = session.get(Process, process_id)
+        if not process:
+            raise ProcessNotFoundError(process_id)
+
+        # Get all runs for this process with their metadata
+        statement = (
+            select(ProcessRun)
+            .where(ProcessRun.process_id == process_id)
+            .where(ProcessRun.deleted_at.is_(None))
+        )
+
+        runs = session.exec(statement).all()
+
+        # Collect all unique values for each metadata field
+        metadata_options: dict[str, set[str]] = {}
+
+        for run in runs:
+            if run.meta:
+                for key, value in run.meta.items():
+                    if key not in metadata_options:
+                        metadata_options[key] = set()
+
+                    # Convert value to string for consistent filtering
+                    if value is not None:
+                        metadata_options[key].add(str(value))
+
+        # Convert sets to sorted lists for consistent output
+        result = {key: sorted(list(values)) for key, values in metadata_options.items()}
+
+        return result

@@ -606,6 +606,78 @@ Content-Type: application/json
 - And you send `{"priority": "high", "status": "completed"}` → Success
 - And you send `{"priority": "high", "new_field": "value"}` → HTTP 400 Error: "Unknown metadata keys: ['new_field']. Existing keys: ['priority', 'status']"
 
+#### **Get Filter Metadata (Combined)**
+```http
+GET /api/v1/processes/{process_id}/filter-metadata
+X-API-Key: {API_KEY}
+```
+
+**Purpose:** Get complete filter metadata in a single request. This combines:
+- Field definitions (types, descriptions, sortable/filterable info)
+- Available metadata filter values from existing runs
+
+**Response Example:**
+```json
+{
+  "process_id": 1,
+  "process_name": "Aktindsigt Process",
+  "searchable_fields": {
+    "standard_fields": {
+      "entity_id": {
+        "type": "string",
+        "description": "Entity identifier",
+        "sortable": true,
+        "filterable": true
+      },
+      "status": {
+        "type": "enum",
+        "values": ["pending", "running", "completed", "failed", "cancelled"],
+        "sortable": true,
+        "filterable": true
+      }
+    },
+    "metadata_fields": {
+      "clinic": {
+        "type": "string",
+        "description": "Metadata field: clinic",
+        "sortable": true,
+        "filterable": true,
+        "filter_format": "meta_filter parameter: field:value"
+      }
+    }
+  },
+  "metadata_filters": {
+    "clinic": ["Aarhus Central", "Odense", "Viby"],
+    "cpr": ["1234567890", "9876543210"],
+    "status": ["active", "completed", "pending"]
+  },
+  "all_sortable_fields": ["id", "entity_id", "status", "meta.clinic"],
+  "all_filterable_fields": ["entity_id", "status", "meta.clinic"],
+  "field_count": {
+    "standard": 8,
+    "metadata": 3,
+    "total": 11
+  }
+}
+```
+
+**Usage in Frontend:**
+1. Call this endpoint once when loading the filter/search UI
+2. Use `searchable_fields` to determine available fields and their types
+3. Use `metadata_filters` to populate dropdown options
+4. Build filters: `GET /api/v1/runs/?process_id=1&meta_filter=clinic:Viby`
+
+**Benefits:**
+- Single API call instead of multiple requests
+- Consistent data (fields and values fetched together)
+- Includes field type information for proper UI controls
+
+**Notes:**
+- Only includes active (non-deleted) runs
+- Metadata filter values are unique and sorted alphabetically
+- Field definitions come from process schema
+- Filter values come from actual run data
+
 ### **Step Management**
 
 #### **List Process Steps**
@@ -1292,10 +1364,10 @@ GET /api/v1/runs/?process_id=1&failed_at=3
 X-API-Key: {API_KEY}
 ```
 
-#### **Searchable Fields Discovery**
+#### **Filter Metadata Discovery**
 ```http
-# Get available filterable fields for a process
-GET /api/v1/processes/{process_id}/searchable-fields
+# Get complete filter metadata (fields + values) for a process
+GET /api/v1/processes/{process_id}/filter-metadata
 X-API-Key: {API_KEY}
 ```
 

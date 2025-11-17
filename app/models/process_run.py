@@ -1,10 +1,12 @@
 """ProcessRun models."""
 
+import json
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional
 
 from sqlalchemy import JSON
 from sqlalchemy.orm import RelationshipProperty
+from sqlalchemy.types import TEXT, TypeDecorator
 from sqlmodel import Column, Field, Relationship, SQLModel
 
 from app.models.base import TimestampsMixin
@@ -18,15 +20,27 @@ if TYPE_CHECKING:
     )
 
 
+class UnicodeJSON(TypeDecorator):
+    impl = TEXT
+
+    def process_bind_param(self, value, dialect):
+        if value is not None:
+            return json.dumps(value, ensure_ascii=False)
+        return None
+
+    def process_result_value(self, value, dialect):
+        if value is not None:
+            return json.loads(value)
+        return None
+
+
 class ProcessRunBase(SQLModel):
     """Base model for ProcessRun."""
 
-    meta: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    meta: dict[str, Any] = Field(default_factory=dict, sa_column=Column(UnicodeJSON))
     entity_id: str = Field(index=True, max_length=100)
     entity_name: str | None = Field(default=None, max_length=255)
-    status: ProcessRunStatus = Field(
-        default=ProcessRunStatus.PENDING, index=True, max_length=20
-    )
+    status: ProcessRunStatus = Field(default=ProcessRunStatus.PENDING, index=True, max_length=25)
     started_at: datetime | None = Field(default=None)
     finished_at: datetime | None = Field(default=None)
     process_id: int | None = Field(default=None, foreign_key="process.id")
