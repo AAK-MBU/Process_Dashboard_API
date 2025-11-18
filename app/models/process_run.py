@@ -4,7 +4,6 @@ import json
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional
 
-from sqlalchemy import JSON
 from sqlalchemy.orm import RelationshipProperty
 from sqlalchemy.types import TEXT, TypeDecorator
 from sqlmodel import Column, Field, Relationship, SQLModel
@@ -21,6 +20,8 @@ if TYPE_CHECKING:
 
 
 class UnicodeJSON(TypeDecorator):
+    """Custom SQLAlchemy type for storing JSON as Unicode text."""
+
     impl = TEXT
 
     def process_bind_param(self, value, dialect):
@@ -32,6 +33,17 @@ class UnicodeJSON(TypeDecorator):
         if value is not None:
             return json.loads(value)
         return None
+
+    def process_literal_param(self, value, dialect):
+        """Process literal parameters for SQL expressions."""
+        if value is not None:
+            return json.dumps(value, ensure_ascii=False)
+        return None
+
+    @property
+    def python_type(self):
+        """Return the Python type handled by this custom type."""
+        return dict
 
 
 class ProcessRunBase(SQLModel):

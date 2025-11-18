@@ -8,6 +8,7 @@ from sqlmodel import Column, Field, Relationship, SQLModel
 
 from app.models.base import TimestampsMixin
 from app.models.enums import StepRunStatus
+from app.models.process_run import UnicodeJSON
 
 if TYPE_CHECKING:
     from app.models.process_run import ProcessRun
@@ -20,7 +21,7 @@ class ProcessStepRunBase(SQLModel):
     status: StepRunStatus = Field(default=StepRunStatus.PENDING, max_length=25)
     started_at: datetime | None = Field(default=None)
     finished_at: datetime | None = Field(default=None)
-    failure: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    failure: dict[str, Any] | None = Field(default=None, sa_column=Column(UnicodeJSON))
     run_id: int | None = Field(default=None, foreign_key="process_run.id")
     step_id: int | None = Field(default=None, foreign_key="process_step.id")
     step_index: int | None = Field(default=None, ge=0)
