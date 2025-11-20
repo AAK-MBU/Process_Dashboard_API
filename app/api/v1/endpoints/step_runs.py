@@ -14,6 +14,7 @@ from app.models import (
     ProcessStepRunUpdate,
     StepRunStatus,
 )
+from app.services.rerun_service import RerunService
 
 router = APIRouter()
 
@@ -82,11 +83,13 @@ def update_step_run(
 
 @router.post(
     "/{step_run_id}/rerun",
-    response_model=ProcessStepRunPublic,
     summary="Rerun a process step",
-    description="Rerun a specific step run if it's configured as rerunnable",
+    description=(
+        "Rerun a specific step run if it's configured as rerunnable. "
+        "This will trigger the external orchestrator to rerun the step."
+    ),
 )
-def rerun_step(*, session: SessionDep, step_run_id: int) -> ProcessStepRun:
+async def rerun_step(*, session: SessionDep, step_run_id: int, admin_key: RequireAdminKey) -> dict:
     """Rerun a process step run."""
     step_run = session.get(ProcessStepRun, step_run_id)
     if not step_run:
@@ -95,34 +98,56 @@ def rerun_step(*, session: SessionDep, step_run_id: int) -> ProcessStepRun:
     # Check if this specific step run can be rerun
     if not step_run.can_rerun:
         raise HTTPException(
-            status_code=400, detail=f"This step run cannot be rerun (can_rerun=False)"
+            status_code=400,
+            detail="This step run cannot be rerun (can_rerun=False)",
         )
 
     # Check if maximum reruns exceeded
     if step_run.rerun_count >= step_run.max_reruns:
         raise HTTPException(
-            status_code=400, detail=f"Maximum reruns ({step_run.max_reruns}) exceeded for this step"
+            status_code=400,
+            detail=(f"Maximum reruns ({step_run.max_reruns}) exceeded for this step"),
         )
 
     # Check if step is in a rerunnable state (failed or stopped)
     if step_run.status not in [StepRunStatus.FAILED]:
         raise HTTPException(
             status_code=400,
-            detail=f"Step must be in FAILED status to be rerun (current: {step_run.status})",
+            detail=(f"Step must be in FAILED status to be rerun (current: {step_run.status})"),
         )
 
-    # Increment rerun count and reset step run to pending status
-    step_run.rerun_count += 1
-    step_run.status = StepRunStatus.PENDING
-    step_run.started_at = None
-    step_run.finished_at = None
-    step_run.failure = None
+    # Trigger external orchestrator rerun
+    rerun_service = RerunService(session)
+    try:
+        rerun_result = await rerun_service.trigger_rerun(step_run_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    # Check if rerun was successful
+    if rerun_result["result"] == "success":
+        # Update internal state after successful orchestrator call
+        step_run.rerun_count += 1
+        step_run.status = StepRunStatus.PENDING
+        step_run.started_at = None
+        step_run.finished_at = None
+        step_run.failure = None
+    else:
+        # Rerun failed - update failure message with error details
+        step_run.failure = {
+            "error": "Rerun failed",
+            "message": rerun_result["message"],
+            "adapter": rerun_result["adapter"],
+            "result_type": rerun_result["result"],
+        }
 
     session.add(step_run)
     session.commit()
     session.refresh(step_run)
 
-    return step_run
+    return {
+        "step_run": ProcessStepRunPublic.model_validate(step_run),
+        "rerun_result": rerun_result,
+    }
 
 
 @router.get(

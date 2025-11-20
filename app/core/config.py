@@ -44,6 +44,23 @@ class Settings(BaseSettings):
         description="Static API token for authentication",
     )
 
+    # Rerun adapter settings
+    RERUN_ADAPTER_TYPE: str = Field(
+        default="automation_server",
+        description="Default adapter type for rerunning process steps",
+    )
+
+    # Automation server (ATS) settings
+    AUTOMATION_SERVER_URL: str | None = Field(
+        default=None,
+        description="URL of the automation server for rerun operations",
+    )
+
+    AUTOMATION_SERVER_TOKEN: str | None = Field(
+        default=None,
+        description=("Token for authenticating with the automation server for rerun operations"),
+    )
+
 
 # Global settings instance
 settings = Settings()
