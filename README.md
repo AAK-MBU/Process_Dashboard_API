@@ -562,7 +562,7 @@ X-API-Key: {API_KEY}
   - `status` - Filter by run status
   - `started_after`, `started_before` - Date filters (ISO 8601 format)
   - `finished_after`, `finished_before` - Date filters (ISO 8601 format)
-  - `meta_filter` - Filter by metadata (format: `field:value`). Can be specified multiple times for multiple filters. Multiple values for the same field are OR'd together, different fields are AND'd together.
+  - `meta_filter` - Filter by metadata (format: `field:value`). Can be specified multiple times for multiple filters. **Logic**: Multiple values for the same field are OR'd together, different fields are AND'd together. Example: `meta_filter=clinic:A&meta_filter=clinic:B&meta_filter=name:X` returns `(clinic=A OR clinic=B) AND name=X`
   - `failed_at` - Filter runs that failed at a specific step_id (e.g., `failed_at=3` shows only runs that failed at step 3)
 - **Sorting:**
   - `order_by` - Field to sort by (default: `created_at`)
@@ -1343,6 +1343,11 @@ X-API-Key: {API_KEY}
 
 # Example: Filter by multiple values for the same field (OR logic)
 GET /api/v1/runs/?meta_filter=department:Sales&meta_filter=department:Marketing
+X-API-Key: {API_KEY}
+
+# Example: Combining OR and AND logic
+# This returns: (clinic=Viby OR clinic=Møllevang) AND name=Alma Hansen
+GET /api/v1/runs/?meta_filter=clinic:Viby&meta_filter=clinic:Møllevang&meta_filter=name:Alma Hansen
 X-API-Key: {API_KEY}
 
 # Values can contain commas
