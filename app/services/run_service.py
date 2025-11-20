@@ -320,7 +320,7 @@ class ProcessRunService:
                     text(f"JSON_VALUE(process_run.meta, '$.{field}') = :meta_{field}")
                 ).params(**{f"meta_{field}": values[0]})
             else:
-                # Multiple values: OR them together
+                # Multiple values: OR them together, wrapped in parentheses
                 or_conditions = []
                 sql_params = {}
                 for idx, value in enumerate(values):
@@ -329,7 +329,9 @@ class ProcessRunService:
                         f"JSON_VALUE(process_run.meta, '$.{field}') = :{param_name}"
                     )
                     sql_params[param_name] = value
-                statement = statement.where(text(" OR ".join(or_conditions))).params(**sql_params)
+                # Wrap OR conditions in parentheses to ensure proper precedence
+                or_clause = f"({' OR '.join(or_conditions)})"
+                statement = statement.where(text(or_clause)).params(**sql_params)
         return statement
 
     def _apply_failed_at_filter(self, statement, failed_at: int | None):
