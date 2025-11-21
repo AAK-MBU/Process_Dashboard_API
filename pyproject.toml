@@ -1,6 +1,6 @@
 [project]
 name = "Process_Dashboard_API"
-version = "2.10.2"
+version = "2.11.0"
 description = "API for process visualization"
 authors = [
     {name = "MBU", email = "rpa@mbu.aarhus.dk"}
