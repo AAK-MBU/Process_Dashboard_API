@@ -1,6 +1,6 @@
 [project]
 name = "Process_Dashboard_API"
-version = "2.11.0"
+version = "2.12.0"
 description = "API for process visualization"
 authors = [
     {name = "MBU", email = "rpa@mbu.aarhus.dk"}
@@ -38,12 +38,6 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["app*"]
-
-[tool.uv]
-dev-dependencies = [
-    "ruff>=0.1.0",
-    "mypy>=1.7.0",
-]
 
 # Ruff configuration
 [tool.ruff]
