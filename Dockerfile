@@ -80,7 +80,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 
 # Add metadata labels
 LABEL maintainer="AAK-MBU" \
-      version="2.10.1" \
+      version="2.11.0" \
       description="Process Dashboard API"
 
 # Use exec form for proper signal handling

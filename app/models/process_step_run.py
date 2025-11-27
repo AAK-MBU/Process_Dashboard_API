@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional
 
-from sqlalchemy import JSON, event
+from sqlalchemy import JSON, String, event
 from sqlmodel import Column, Field, Relationship, SQLModel
 
 from app.models.base import TimestampsMixin
@@ -25,6 +25,11 @@ class ProcessStepRunBase(SQLModel):
     run_id: int | None = Field(default=None, foreign_key="process_run.id")
     step_id: int | None = Field(default=None, foreign_key="process_step.id")
     step_index: int | None = Field(default=None, ge=0)
+    last_modified_by: str | None = Field(
+        default=None,
+        sa_column=Column(String(255), nullable=True, index=True),
+        description="User who last modified this record",
+    )
 
     can_rerun: bool = Field(
         default=False, description="Whether this specific step run can be rerun"
@@ -67,6 +72,7 @@ class ProcessStepRunUpdate(SQLModel):
     started_at: datetime | None = None
     finished_at: datetime | None = None
     failure: dict[str, Any] | None = None
+    last_modified_by: str | None = None
 
 
 class ProcessStepRunPublic(ProcessStepRunBase):
