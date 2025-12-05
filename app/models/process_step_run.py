@@ -72,6 +72,7 @@ class ProcessStepRunUpdate(SQLModel):
     started_at: datetime | None = None
     finished_at: datetime | None = None
     failure: dict[str, Any] | None = None
+    rerun_config: dict[str, Any] | None = None
     last_modified_by: str | None = None
 
 
