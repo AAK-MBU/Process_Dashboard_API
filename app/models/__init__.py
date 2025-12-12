@@ -7,6 +7,7 @@ from app.models.api_key import (
     ApiKeyPublic,
     ApiKeyWithSecret,
 )
+from app.models.audit_log import AuditLog, AuditLogPublic
 from app.models.base import TimestampsMixin
 from app.models.enums import ProcessRunStatus, StepRunStatus
 from app.models.process import Process, ProcessBase, ProcessCreate, ProcessPublic
@@ -39,6 +40,9 @@ from app.models.retention import (
 from app.models.search import MatchedField
 
 __all__ = [
+    # Audit Log
+    "AuditLog",
+    "AuditLogPublic",
     # Enums
     "StepRunStatus",
     "ProcessRunStatus",
@@ -91,3 +95,4 @@ ProcessPublic.model_rebuild()
 ProcessStepPublic.model_rebuild()
 ProcessRunPublic.model_rebuild()
 ProcessStepRunPublic.model_rebuild()
+AuditLog.model_rebuild()
