@@ -1,8 +1,9 @@
 """Dependencies for FastAPI routes."""
 
+import logging
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import APIKeyHeader
 from sqlmodel import Session
 
@@ -15,6 +16,8 @@ from app.services.run_service import ProcessRunService
 from app.services.search_service import SearchService
 from app.services.step_run_service import StepRunService
 from app.services.step_service import StepService
+
+logger = logging.getLogger(__name__)
 
 
 def get_process_service(db: Session = Depends(get_session)) -> ProcessService:

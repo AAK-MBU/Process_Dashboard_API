@@ -17,6 +17,7 @@ from app.core.exceptions import (
     StepRunError,
 )
 from app.db.database import create_db_and_tables
+from app.middleware.audit_middleware_asgi import AuditLogMiddleware
 from app.models.events import register_events
 
 
@@ -48,6 +49,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(AuditLogMiddleware)
 
 # Configure pagination (must be before including routers)
 add_pagination(app)

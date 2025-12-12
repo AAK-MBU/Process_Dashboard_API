@@ -5,11 +5,13 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import (
     admin,
     api_keys,
+    audit,
     auth,
     processes,
     runs,
     step_runs,
     steps,
+    test,
 )
 from app.api.v1.endpoints import (
     overview as dashboard,
@@ -36,3 +38,7 @@ api_router.include_router(
 )
 
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
+
+api_router.include_router(audit.router, prefix="/audit-logs", tags=["audit-logs"])
+
+api_router.include_router(test.router, prefix="/test", tags=["testing"])
