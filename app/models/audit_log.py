@@ -7,6 +7,7 @@ from sqlalchemy import JSON
 from sqlmodel import Column, Field, SQLModel
 
 from app.models.base import TimestampsMixin
+from app.models.process_run import UnicodeJSON
 
 
 class AuditLog(TimestampsMixin, SQLModel, table=True):
@@ -28,7 +29,7 @@ class AuditLog(TimestampsMixin, SQLModel, table=True):
     method: str = Field(max_length=10, description="HTTP method (GET, POST, etc.)")
     path: str = Field(max_length=500, index=True, description="Request path")
     query_params: dict[str, Any] | None = Field(
-        default=None, sa_column=Column(JSON), description="Query parameters"
+        default=None, sa_column=Column(UnicodeJSON), description="Query parameters"
     )
 
     # API Key information
