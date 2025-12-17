@@ -97,3 +97,11 @@ def set_started_at(mapper, connection, target):
     """Automatically set started_at when status changes to running."""
     if target.status == StepRunStatus.RUNNING and target.started_at is None:
         target.started_at = datetime.now(timezone.utc)
+
+
+@event.listens_for(ProcessStepRun, "before_update")
+def reset_failure_on_rerun(mapper, connection, target):
+    """Clear failure information when status is set to PENDING or RUNNING."""
+    rerun_statuses = [StepRunStatus.PENDING, StepRunStatus.RUNNING]
+    if target.status in rerun_statuses:
+        target.failure = None
