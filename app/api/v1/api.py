@@ -34,7 +34,7 @@ api_router.include_router(step_runs.router, prefix="/step-runs", tags=["step-run
 api_router.include_router(auth.router, prefix="/auth", tags=["authentication"])
 
 api_router.include_router(
-    api_keys.router, prefix="/api-keys", tags=["api-keys"], include_in_schema=False
+    api_keys.router, prefix="/api-keys", tags=["api-keys"], include_in_schema=True
 )
 
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])

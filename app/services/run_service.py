@@ -3,6 +3,7 @@
 from datetime import timedelta
 
 from sqlalchemy import text
+from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
 from app.core.exceptions import ProcessNotFoundError, RunNotFoundError
@@ -37,7 +38,13 @@ class ProcessRunService:
             ProcessNotFoundError: If process doesn't exist
         """
         # Verify process exists
-        process = self.db.get(Process, run_data.process_id)
+        statement = (
+            select(Process)
+            .where(Process.id == run_data.process_id)
+            .options(selectinload(Process.steps))
+        )
+        process = self.db.exec(statement).first()
+
         if not process:
             raise ProcessNotFoundError(run_data.process_id)
 
@@ -96,7 +103,15 @@ class ProcessRunService:
             ValueError: If any provided metadata keys don't exist in current
                 metadata
         """
-        run = self.get_run(run_id)
+        statement = (
+            select(ProcessRun)
+            .where(ProcessRun.id == run_id)
+            .options(selectinload(ProcessRun.steps))
+        )
+        run = self.db.exec(statement).first()
+
+        if not run:
+            raise RunNotFoundError(run_id)
 
         # Check that all provided keys exist in current metadata
         current_meta = run.meta or {}
