@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
 from app.core.exceptions import ProcessNotFoundError
@@ -299,7 +300,10 @@ class ProcessService:
         Raises:
             ProcessNotFoundError: If process doesn't exist
         """
-        process = self.get_process(process_id)
+        statement = (
+            select(Process).where(Process.id == process_id).options(selectinload(Process.steps))
+        )
+        process = self.db.exec(statement).first()
         now = utc_now()
 
         # Soft delete the process
@@ -326,7 +330,14 @@ class ProcessService:
         Raises:
             ProcessNotFoundError: If process doesn't exist
         """
-        process = self.get_process(process_id, include_deleted=True)
+        # process = self.get_process(process_id, include_deleted=True)
+        statement = (
+            select(Process).where(Process.id == process_id).options(selectinload(Process.steps))
+        )
+        process = self.db.exec(statement).first()
+
+        if not process:
+            raise ProcessNotFoundError(process_id)
 
         # Restore the process
         process.deleted_at = None

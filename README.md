@@ -830,6 +830,181 @@ X-API-Key: {API_KEY}
 }
 ```
 
+### **Process Steps**
+
+#### **List Process Steps**
+```http
+GET /api/v1/steps/process/{process_id}
+X-API-Key: {API_KEY}
+```
+
+**Response:**
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "process_id": 1,
+      "name": "Data Validation",
+      "description": "Validate input data",
+      "order": 1,
+      "is_optional": false,
+      "is_rerunnable": true,
+      "rerun_config": {
+        "subprocess_id": "validate_data_v2",
+        "max_retries": 3
+      }
+    }
+  ]
+}
+```
+
+#### **Create Process Step**
+```http
+POST /api/v1/steps/process/{process_id}
+X-API-Key: {ADMIN_KEY}
+Content-Type: application/json
+
+{
+  "name": "Data Validation",
+  "description": "Validate input data",
+  "order": 1,
+  "is_optional": false,
+  "is_rerunnable": true,
+  "rerun_config": {
+    "subprocess_id": "validate_data_v2",
+    "max_retries": 3
+  }
+}
+```
+
+#### **Get Rerunnable Steps**
+```http
+GET /api/v1/steps/process/{process_id}/rerunnable
+X-API-Key: {API_KEY}
+```
+
+Returns only steps that are configured as rerunnable (useful for UI to show which steps can be retried after failure).
+
+### **Audit Logs**
+
+The API automatically logs all API requests and modifications for compliance and debugging.
+
+#### **List Audit Logs**
+```http
+GET /api/v1/audit-logs/
+X-API-Key: {ADMIN_KEY}
+```
+
+**Query Parameters:**
+- `user_email` - Filter by user email
+- `action` - Filter by action type
+- `method` - Filter by HTTP method (GET, POST, PATCH, DELETE)
+- `path` - Filter by path (partial match)
+- `status_code` - Filter by HTTP status code
+- `min_duration` - Filter by minimum duration in milliseconds
+- `page` - Page number (default: 1)
+- `size` - Items per page (default: 50)
+
+**Response:**
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "user_email": "admin@company.com",
+      "action": "create_run",
+      "method": "POST",
+      "path": "/api/v1/runs/",
+      "status_code": 201,
+      "duration_ms": 145.5,
+      "ip_address": "192.168.1.100",
+      "created_at": "2025-10-03T10:30:00Z"
+    }
+  ],
+  "total": 5234,
+  "page": 1,
+  "size": 50,
+  "pages": 105
+}
+```
+
+#### **List Unique Audit Users**
+```http
+GET /api/v1/audit-logs/users
+X-API-Key: {ADMIN_KEY}
+```
+
+Returns a list of all unique user emails that have made requests.
+
+#### **List Unique Actions**
+```http
+GET /api/v1/audit-logs/actions
+X-API-Key: {ADMIN_KEY}
+```
+
+Returns a list of all unique actions performed (create_run, update_run, delete_run, etc.).
+
+#### **Get Audit Statistics**
+```http
+GET /api/v1/audit-logs/stats?hours=24&user_email=admin@company.com
+X-API-Key: {ADMIN_KEY}
+```
+
+**Query Parameters:**
+- `hours` - Stats for the last N hours (default: 24)
+- `user_email` - Optional filter by specific user
+
+**Response:**
+```json
+{
+  "total_requests": 1247,
+  "successful_requests": 1210,
+  "error_requests": 37,
+  "success_rate": 97.03,
+  "average_duration_ms": 128.5,
+  "requests_by_method": {
+    "GET": 856,
+    "POST": 280,
+    "PATCH": 95,
+    "DELETE": 16
+  },
+  "requests_by_action": {
+    "list_runs": 320,
+    "get_run": 250,
+    "create_run": 150,
+    "update_run": 85
+  },
+  "top_users": [
+    {"email": "app@company.com", "count": 890},
+    {"email": "admin@company.com", "count": 245}
+  ],
+  "period_hours": 24,
+  "user_filter": "admin@company.com"
+}
+```
+
+### **API Key Management (Admin)**
+
+#### **Toggle API Key Active Status**
+```http
+PATCH /api/v1/api-keys/{api_key_id}/toggle
+X-API-Key: {ADMIN_KEY}
+```
+
+Enable or disable an API key without deleting it.
+
+**Response:**
+```json
+{
+  "id": 5,
+  "name": "Production Application Key",
+  "role": "user",
+  "is_active": false,
+  "created_at": "2025-10-03T10:00:00Z"
+}
+```
+
 ---
 
 ## **Automated State Management**
@@ -934,7 +1109,7 @@ When creating step runs, the `step_index` field is **automatically populated** f
 2. API validates and prepares database changes
 3. **Before Insert** - step_index is auto-populated
 4. Database flush occurs
-5. **Before Commit** - parent run status is recalculated
+5. **Before Commit** - parent run status is recalculated (using in-memory identity map)
 6. Transaction commits with all changes
 7. Client receives response with auto-updated data
 

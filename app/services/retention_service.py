@@ -2,6 +2,7 @@
 
 from datetime import datetime, timedelta
 
+from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
 from app.models import Process, ProcessRun
@@ -160,6 +161,14 @@ class DataRetentionService:
         now = utc_now()
 
         # Soft delete the run
+        if not hasattr(run, "_sa_instance_state") or "steps" not in run.__dict__:
+            statement = (
+                select(ProcessRun)
+                .where(ProcessRun.id == run.id)
+                .options(selectinload(ProcessRun.steps))
+            )
+            run = self.db.exec(statement).first()
+
         run.deleted_at = now
         self.db.add(run)
 

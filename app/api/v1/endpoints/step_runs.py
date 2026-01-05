@@ -1,6 +1,7 @@
 """API endpoints for managing process step runs."""
 
 from fastapi import APIRouter, HTTPException
+from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
 from app.api.dependencies import RequireAdminKey
@@ -56,7 +57,14 @@ def update_step_run(
     *, session: SessionDep, step_run_id: int, update_in: ProcessStepRunUpdate
 ) -> ProcessStepRun:
     """Update a process step run status."""
-    step_run = session.get(ProcessStepRun, step_run_id)
+    # step_run = session.get(ProcessStepRun, step_run_id)
+    statement = (
+        select(ProcessStepRun)
+        .where(ProcessStepRun.id == step_run_id)
+        .options(selectinload(ProcessStepRun.run).selectinload(ProcessRun.steps))
+    )
+    step_run = session.exec(statement).first()
+
     if not step_run:
         raise HTTPException(status_code=404, detail="Process step run not found")
 
@@ -91,7 +99,12 @@ def update_step_run(
 )
 async def rerun_step(*, session: SessionDep, step_run_id: int, admin_key: RequireAdminKey) -> dict:
     """Rerun a process step run."""
-    step_run = session.get(ProcessStepRun, step_run_id)
+    statement = (
+        select(ProcessStepRun)
+        .where(ProcessStepRun.id == step_run_id)
+        .options(selectinload(ProcessStepRun.run).selectinload(ProcessRun.steps))
+    )
+    step_run = session.exec(statement).first()
     if not step_run:
         raise HTTPException(status_code=404, detail="Process step run not found")
 
