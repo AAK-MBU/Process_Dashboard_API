@@ -185,6 +185,55 @@ class ProcessRun(ProcessRunBase, TimestampsMixin, table=True):
         ):
             self.started_at = datetime.now(timezone.utc)
 
+    def update_status_from_steps(self, steps: list["ProcessStepRun"]) -> "ProcessRun":
+        """Update the overall status based on a provided list of step
+        statuses.
+
+        This method is used by the before_commit event handler to
+        update status without querying the database, avoiding deadlocks.
+
+        Args:
+            steps: List of ProcessStepRun objects to use for status
+                   calculation.
+
+        Returns:
+            self for method chaining.
+        """
+        if not steps:
+            self.status = ProcessRunStatus.PENDING
+            return self
+
+        step_statuses = [step.status for step in steps]
+        previous_status = self.status
+
+        # Priority 1: If run is explicitly cancelled, keep it cancelled
+        if self.status == ProcessRunStatus.CANCELLED:
+            return self
+
+        # Priority 2: If any step failed, mark as failed
+        if StepRunStatus.FAILED in step_statuses:
+            self.status = ProcessRunStatus.FAILED
+        # Priority 3: If any step is cancelled, mark as cancelled
+        elif StepRunStatus.CANCELLED in step_statuses:
+            self.status = ProcessRunStatus.CANCELLED
+        # Priority 4: If any step is running, mark as running
+        elif StepRunStatus.RUNNING in step_statuses:
+            self.status = ProcessRunStatus.RUNNING
+        # Priority 5: Check if all required steps are complete
+        elif self._all_required_steps_complete(step_statuses):
+            self.status = ProcessRunStatus.COMPLETED
+        # Priority 6: If there are pending steps, mark as running
+        elif StepRunStatus.PENDING in step_statuses:
+            self.status = ProcessRunStatus.RUNNING
+        # Priority 7: Default to pending
+        else:
+            self.status = ProcessRunStatus.PENDING
+
+        # Auto-set finished_at when transitioning to terminal status
+        self._update_finished_at(previous_status, self.status)
+
+        return self
+
 
 class ProcessRunCreate(SQLModel):
     """Schema for creating a process run."""

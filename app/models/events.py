@@ -47,34 +47,45 @@ def register_events():
 
     @event.listens_for(Session, "before_commit", propagate=True)
     def update_run_status_before_commit(session):
-        """
-        Update parent ProcessRun status before commit.
+        """Update parent ProcessRun status before commit.
 
-        This runs after flush but before commit,
-        allowing status changes to be included.
+        Uses only objects already loaded in the session to avoid
+        database queries that could cause deadlocks during the
+        transaction.
         """
-        # Track which runs need updating
-        runs_to_update = set()
+        # Use a dict keyed by run_id instead of a set of objects
+        runs_to_update: dict[int, ProcessRun] = {}
 
-        # Check all ProcessStepRun objects that were modified
+        # Collect step runs and their parent runs from the session's
+        # identity map. Do NOT execute any queries here - only use
+        # objects already loaded
         for obj in session.identity_map.values():
             if isinstance(obj, ProcessStepRun) and obj.run_id:
-                runs_to_update.add(obj.run_id)
+                # Use session.get() which checks identity map first
+                # before querying
+                run = session.get(ProcessRun, obj.run_id)
+                if run and obj.run_id not in runs_to_update:
+                    runs_to_update[obj.run_id] = run
 
-        # Update each affected run
-        for run_id in runs_to_update:
-            run = session.get(ProcessRun, run_id)
-            if run:
+        # Update each affected run using already-loaded data
+        for run_id, run in runs_to_update.items():
+            # Get steps from identity map instead of querying
+            steps = [
+                obj
+                for obj in session.identity_map.values()
+                if isinstance(obj, ProcessStepRun) and obj.run_id == run_id
+            ]
+
+            if steps:
                 old_status = run.status
-                run.update_status()
-                new_status = run.status
-
-                if old_status != new_status:
+                # Use the new method that accepts steps directly
+                run.update_status_from_steps(steps)
+                if old_status != run.status:
                     logger.debug(
-                        "Event: Updated run %s status from %s to %s before commit",
+                        "Event: Updated run %s status from %s to %s",
                         run_id,
                         old_status,
-                        new_status,
+                        run.status,
                     )
 
     logger.info("SQLAlchemy events registered successfully")
