@@ -13,13 +13,19 @@ router = APIRouter()
     "/",
     summary="Get system-wide statistics",
     description="Aggregated statistics across all processes: status breakdown, "
-    "success rate, run timing, step failure hotspots, and trends (admin only).",
+    "success rate, run timing, step failure hotspots, and trends (admin only). "
+    "Headline metrics are all-time; only trends respect the days window "
+    "(days=0 for all-time trends).",
 )
 def get_system_statistics(
     *,
     statistics_service: StatisticsServiceDep,
     admin_key: RequireAdminKey,
-    days: int = Query(30, ge=1, description="Window in days for time-based trends"),
+    days: int = Query(
+        30,
+        ge=0,
+        description="Window in days for time-based trends; use 0 for all-time",
+    ),
 ) -> dict[str, Any]:
     """Get aggregated statistics across all processes."""
     return statistics_service.get_system_statistics(days=days)
@@ -29,14 +35,20 @@ def get_system_statistics(
     "/process/{process_id}",
     summary="Get statistics for a single process",
     description="Aggregated statistics scoped to one process: status breakdown, "
-    "success rate, run timing, step failure hotspots, and trends (admin only).",
+    "success rate, run timing, step failure hotspots, and trends (admin only). "
+    "Headline metrics are all-time; only trends respect the days window "
+    "(days=0 for all-time trends).",
 )
 def get_process_statistics(
     *,
     statistics_service: StatisticsServiceDep,
     admin_key: RequireAdminKey,
     process_id: int,
-    days: int = Query(30, ge=1, description="Window in days for time-based trends"),
+    days: int = Query(
+        30,
+        ge=0,
+        description="Window in days for time-based trends; use 0 for all-time",
+    ),
 ) -> dict[str, Any]:
     """Get aggregated statistics for a specific process.
 

@@ -181,8 +181,11 @@ class StatisticsService:
         ]
 
     def _run_trends(self, process_id: int | None, days: int) -> list[dict[str, Any]]:
-        """Runs created and completed per day over the last ``days`` days."""
-        threshold = utc_now() - timedelta(days=days)
+        """Runs created and completed per day.
+
+        Covers the last ``days`` days, or all-time when ``days`` is 0.
+        """
+        threshold = None if days == 0 else utc_now() - timedelta(days=days)
 
         created = self._count_by_day(ProcessRun.created_at, threshold, process_id)
         completed = self._count_by_day(
@@ -220,9 +223,10 @@ class StatisticsService:
             select(day, func.count())
             .where(ProcessRun.deleted_at.is_(None))
             .where(date_column.is_not(None))
-            .where(date_column >= threshold)
             .group_by(day)
         )
+        if threshold is not None:
+            statement = statement.where(date_column >= threshold)
         if process_id is not None:
             statement = statement.where(ProcessRun.process_id == process_id)
         if extra_filter is not None:
