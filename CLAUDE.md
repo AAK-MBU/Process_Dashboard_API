@@ -8,9 +8,10 @@ REST API for monitoring and managing business processes. Processes have ordered 
 
 ## Commands
 
-Dependencies are managed with **uv** (not pip). Python 3.11+.
+Dependencies are managed with **uv** (not pip). Target runtime is **Python 3.11** — pin it explicitly when creating the venv, because `uv` otherwise picks the newest interpreter it can find (e.g. 3.14), for which `pydantic-core` and `pyodbc` have no wheels and fail to build from source.
 
 ```bash
+uv venv --python 3.11            # pin 3.11 (uv python install 3.11 first if missing)
 uv sync                          # install all deps (incl. dev) from uv.lock
 uv sync --extra dev              # ensure ruff/mypy are present
 
@@ -27,11 +28,15 @@ docker compose -f docker-compose.local.yml up --build
 # Docker (prod; joins external `edge` network, no published port)
 docker compose up -d
 
-# Version bump (updates pyproject.toml, app/version.py, .env.example, Dockerfile)
+# Version bump (rewrites pyproject.toml, .env.example, Dockerfile; runs `uv lock`)
 uv run python scripts/update_version.py [patch|minor|major|X.Y.Z]
 ```
 
 There is **no test suite** in this repo. The README references some scripts (`scripts/migrate_db.py`, `scripts/add_api_key_roles.py`) that do not exist; the actual scripts are `update_version.py`, `docker_setup_api_keys.py`, and shell/PowerShell API-key setup helpers. Tables are auto-created at startup via `SQLModel.metadata.create_all` (no Alembic migrations).
+
+**mypy baseline is not clean** — the repo carries ~100 pre-existing errors, almost all SQLModel false positives where `mypy` doesn't see SQLAlchemy column operators on `T | None` fields (e.g. `Item "datetime" of "datetime | None" has no attribute "is_"` on `Process.deleted_at.is_(None)`). These are **not suppressed**; don't chase them. Only worry about *new* error kinds your change introduces.
+
+**Git workflow:** open PRs against **`develop`**, not `main`. `main` is updated via release PRs from `develop`. Bump the version (above) as part of feature/release work.
 
 ## Architecture
 
@@ -39,7 +44,7 @@ Layered FastAPI app. Request flow: **endpoint → service → model**, with cros
 
 - **`app/main.py`** — app factory. Registers CORS, the audit ASGI middleware, `fastapi-pagination`, and exception handlers mapping custom exceptions (`app/core/exceptions.py`) to HTTP responses. The lifespan hook calls `create_db_and_tables()` then `register_events()`. **The entire `/api/v1` router is gated by `verify_api_key`** (applied as a router-level dependency), so every v1 endpoint requires a valid `X-API-Key`.
 
-- **`app/api/v1/`** — `api.py` aggregates routers under prefixes (`/processes`, `/runs`, `/steps`, `/step-runs`, `/dashboard`, `/auth`, `/api-keys`, `/admin`, `/audit-logs`, `/test`). Endpoints are thin and delegate to services.
+- **`app/api/v1/`** — `api.py` aggregates routers under prefixes (`/processes`, `/runs`, `/steps`, `/step-runs`, `/dashboard`, `/statistics`, `/auth`, `/api-keys`, `/admin`, `/audit-logs`, `/test`). Endpoints are thin and delegate to services. Adding an endpoint module means wiring it in **three** places: a `get_*_service` factory + `*ServiceDep` alias in `dependencies.py`, an `include_router(...)` in `api.py`, and the module name in `endpoints/__init__.py`'s `__all__`.
 
 - **`app/api/dependencies.py`** — DI wiring. Provides `get_*_service` factories and the `RequireApiKey` / `RequireAdminKey` annotated dependencies. Admin-only endpoints depend on `require_admin_key` (checks `api_key.role == "admin"`).
 
@@ -56,6 +61,14 @@ Critical, non-obvious behavior — much of the data consistency is implicit, not
 - `before_insert` on `ProcessStepRun` auto-populates `step_index` from the related `ProcessStep`.
 - `before_commit` on the `Session` recalculates each affected parent `ProcessRun`'s status from its step runs, and manages `started_at`/`finished_at` timestamps on status transitions.
 - **Deadlock constraint:** the `before_commit` handler must operate **only on objects already in the session identity map** — it deliberately avoids issuing new queries (uses `session.get`, which checks the identity map first). A previous deadlock was caused by querying inside this handler. Preserve this when editing run-status logic. The status priority order (failed > cancelled > running > completed > pending; optional steps don't block completion) lives in `ProcessRun.update_status_from_steps`.
+
+### Writing queries — SQL Server dialect gotchas
+
+The only target DB is SQL Server (`mssql+pyodbc`); queries may use dialect-specific constructs:
+- **JSON metadata** is stored in `meta` columns. Filter/sort on nested keys with raw `JSON_VALUE(<table>.meta, '$.<key>')` via `sqlalchemy.text(...)` — see `run_service.py` (`_apply_metadata_filters` / metadata sort).
+- **Date bucketing:** do **not** use SQLAlchemy's generic `Date` for `cast()` — under the mssql dialect it renders as `CAST(... AS DATETIME)` (no day truncation). Use `from sqlalchemy.dialects.mssql import DATE` so it compiles to `CAST(... AS DATE)`. See `statistics_service.py:_count_by_day`.
+- Aggregation uses SQL-level `func.count()` + `group_by` (e.g. `statistics_service.py`); older code (`overview.py`) counts in Python after loading rows — prefer the former for anything that can span many runs.
+- Every aggregation/list query must exclude soft-deleted rows: `.where(<Model>.deleted_at.is_(None))`.
 
 ### Soft delete & retention
 
