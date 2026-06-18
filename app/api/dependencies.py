@@ -14,6 +14,7 @@ from app.services.auth_service import AuthService
 from app.services.process_service import ProcessService
 from app.services.run_service import ProcessRunService
 from app.services.search_service import SearchService
+from app.services.statistics_service import StatisticsService
 from app.services.step_run_service import StepRunService
 from app.services.step_service import StepService
 
@@ -48,6 +49,11 @@ def get_step_run_service(db: Session = Depends(get_session)) -> StepRunService:
 def get_auth_service(db: Session = Depends(get_session)) -> AuthService:
     """Get authentication service instance."""
     return AuthService(db)
+
+
+def get_statistics_service(db: Session = Depends(get_session)) -> StatisticsService:
+    """Dependency for getting StatisticsService."""
+    return StatisticsService(db)
 
 
 # Security scheme for API Key authentication
@@ -110,6 +116,7 @@ RunServiceDep = Annotated[ProcessRunService, Depends(get_run_service)]
 SearchServiceDep = Annotated[SearchService, Depends(get_search_service)]
 StepRunServiceDep = Annotated[StepRunService, Depends(get_step_run_service)]
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
+StatisticsServiceDep = Annotated[StatisticsService, Depends(get_statistics_service)]
 
 # Authentication Type Aliases
 RequireApiKey = Annotated[ApiKey, Depends(verify_api_key)]

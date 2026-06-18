@@ -9,6 +9,7 @@ from app.api.v1.endpoints import (
     auth,
     processes,
     runs,
+    statistics,
     step_runs,
     steps,
     test,
@@ -40,5 +41,7 @@ api_router.include_router(
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
 
 api_router.include_router(audit.router, prefix="/audit-logs", tags=["audit-logs"])
+
+api_router.include_router(statistics.router, prefix="/statistics", tags=["statistics"])
 
 api_router.include_router(test.router, prefix="/test", tags=["testing"])
