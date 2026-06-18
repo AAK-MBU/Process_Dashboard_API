@@ -7,6 +7,7 @@ from app.api.v1.endpoints import (
     overview,
     processes,
     runs,
+    statistics,
     step_runs,
     steps,
 )
@@ -18,6 +19,7 @@ __all__ = [
     "overview",
     "processes",
     "runs",
+    "statistics",
     "step_runs",
     "steps",
 ]
