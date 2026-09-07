@@ -269,6 +269,17 @@ POST /api/v1/runs/{run_id}/restore
 X-API-Key: {ADMIN_KEY}
 ```
 
+#### **List Soft-Deleted Runs**
+```http
+GET /api/v1/runs/?include_deleted=true
+X-API-Key: {ADMIN_KEY}
+```
+
+**Behavior:**
+- `include_deleted=true` requires an admin API key (403 otherwise)
+- Returns both active and soft-deleted runs; check `deleted_at` to tell them apart
+- Useful for finding the `run_id` of a run you want to restore
+
 ### **Data Neutralization**
 
 #### **Neutralize Run Data** (Remove PII)
@@ -526,6 +537,7 @@ X-API-Key: {API_KEY}
 &meta_filter=priority:high
 &meta_filter=environment:production
 &failed_at=3
+&include_deleted=false
 &order_by=created_at
 &sort_direction=desc
 &page=1
@@ -564,6 +576,7 @@ X-API-Key: {API_KEY}
   - `finished_after`, `finished_before` - Date filters (ISO 8601 format)
   - `meta_filter` - Filter by metadata (format: `field:value`). Can be specified multiple times for multiple filters. **Logic**: Multiple values for the same field are OR'd together, different fields are AND'd together. Example: `meta_filter=clinic:A&meta_filter=clinic:B&meta_filter=name:X` returns `(clinic=A OR clinic=B) AND name=X`
   - `failed_at` - Filter runs that failed at a specific step_id (e.g., `failed_at=3` shows only runs that failed at step 3)
+  - `include_deleted` - Include soft-deleted runs in the result (default: `false`). **Requires an admin API key** - a non-admin key gets `403 Admin access required to include soft-deleted runs`
 - **Sorting:**
   - `order_by` - Field to sort by (default: `created_at`)
   - `sort_direction` - Sort direction: `asc` or `desc` (default: `desc`)
@@ -571,7 +584,7 @@ X-API-Key: {API_KEY}
   - `page` - Page number (default: 1)
   - `size` - Items per page (default: 50, maximum: 100)
 
-**Note:** Only returns active (non-deleted) runs. Soft-deleted runs are automatically excluded from results.
+**Note:** By default only active (non-deleted) runs are returned. Admin keys can pass `include_deleted=true` to include soft-deleted runs; the `deleted_at` field on each run tells them apart (`null` for active runs).
 
 > **💡 Tip:** Use **Global Search** for quick lookups when you don't know the exact field, or **Query Process Runs** for precise filtering with multiple criteria and sorting.
 
