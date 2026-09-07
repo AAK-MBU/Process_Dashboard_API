@@ -259,4 +259,5 @@ class ProcessRunPublic(ProcessRunBase):
     id: int
     meta: dict[str, Any] = Field(default_factory=dict)
     status: ProcessRunStatus = ProcessRunStatus.PENDING
+    deleted_at: datetime | None = None
     steps: list["ProcessStepRunPublic"] = []

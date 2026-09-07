@@ -14,6 +14,7 @@ from fastapi_pagination.ext.sqlmodel import paginate
 
 from app.api.dependencies import (
     RequireAdminKey,
+    RequireApiKey,
     RunServiceDep,
     SearchServiceDep,
 )
@@ -118,6 +119,7 @@ def list_process_runs(
     response: Response,
     session: SessionDep,
     run_service: RunServiceDep,
+    api_key: RequireApiKey,
     # Basic filters
     process_id: int | None = Query(None, description="Filter by process ID"),
     entity_id: str | None = Query(None, description="Filter by entity ID"),
@@ -146,6 +148,10 @@ def list_process_runs(
         None,
         description="Filter runs that failed at a specific step_id",
     ),
+    # Soft delete
+    include_deleted: bool = Query(
+        False, description="Include soft-deleted runs in the result (requires an admin API key)"
+    ),
     # Sorting
     order_by: str = Query("created_at", description="Field to sort by"),
     sort_direction: str = Query("desc", regex="^(asc|desc)$"),
@@ -153,6 +159,12 @@ def list_process_runs(
     params: Params = Depends(),
 ) -> Page[ProcessRun]:
     """List all process runs with optional filters and sorting."""
+    if include_deleted and api_key.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required to include soft-deleted runs",
+        )
+
     try:
         statement = run_service.build_filtered_statement(
             process_id=process_id,
@@ -167,7 +179,7 @@ def list_process_runs(
             failed_at=failed_at,
             order_by=order_by,
             sort_direction=sort_direction,
-            include_deleted=False,
+            include_deleted=include_deleted,
             include_neutralized=True,
         )
     except ValueError as e:
