@@ -531,7 +531,7 @@ X-API-Key: {API_KEY}
 
 # Advanced Filtering with Pagination
 ?entity_name=Acme
-&status=completed
+&run_status=completed
 &created_after=2025-10-01T00:00:00Z
 &created_before=2025-10-31T23:59:59Z
 &meta_filter=priority:high
@@ -569,22 +569,60 @@ X-API-Key: {API_KEY}
 **Query Parameters:**
 - **Filters:**
   - `process_id` - Filter by process ID
-  - `entity_id` - Filter by entity ID
+  - `entity_id` - Filter by entity ID (exact match)
   - `entity_name` - Partial match on entity name
-  - `status` - Filter by run status
-  - `started_after`, `started_before` - Date filters (ISO 8601 format)
-  - `finished_after`, `finished_before` - Date filters (ISO 8601 format)
+  - `run_status` - Filter by run status (`pending`, `running`, `completed`, `failed`, `cancelled`). Several may be given separated by commas, e.g. `run_status=failed,cancelled`. An unknown status returns `400`
+  - `q` - Free text, partial and case-insensitive, matched against `entity_id`, `entity_name` and the run's top-level metadata values in **every** process. Unlike `/runs/search`, it combines with all the other filters
+  - `is_neutralized` - `true` or `false`; omit to include both
+  - `started_after`, `started_before` - Date filters (ISO 8601 format, inclusive)
+  - `finished_after`, `finished_before` - Date filters (ISO 8601 format, inclusive)
+  - `created_after`, `created_before` - Date filters (ISO 8601 format, inclusive)
+  - A malformed date returns `400`
   - `meta_filter` - Filter by metadata (format: `field:value`). Can be specified multiple times for multiple filters. **Logic**: Multiple values for the same field are OR'd together, different fields are AND'd together. Example: `meta_filter=clinic:A&meta_filter=clinic:B&meta_filter=name:X` returns `(clinic=A OR clinic=B) AND name=X`
   - `failed_at` - Filter runs that failed at a specific step_id (e.g., `failed_at=3` shows only runs that failed at step 3)
   - `include_deleted` - Include soft-deleted runs in the result (default: `false`). **Requires an admin API key** - a non-admin key gets `403 Admin access required to include soft-deleted runs`
 - **Sorting:**
-  - `order_by` - Field to sort by (default: `created_at`)
+  - `order_by` - Field to sort by (default: `created_at`): any run column (`id`, `process_id`, `entity_id`, `entity_name`, `status`, `started_at`, `finished_at`, `created_at`, `updated_at`, `is_neutralized`, `deleted_at`, `scheduled_deletion_at`), `process_name`, `duration`, or `meta.<field>`. Anything else returns `400`; it used to fall back to `created_at` silently. `id` is always added as a tie-breaker, so pages don't reshuffle between requests
   - `sort_direction` - Sort direction: `asc` or `desc` (default: `desc`)
+- **Metadata field names** (in `meta_filter` and `order_by=meta.<field>`) may contain letters, digits, `_`, `-` and spaces, with `.` between nested keys. Anything else returns `400`
 - **Pagination:**
   - `page` - Page number (default: 1)
   - `size` - Items per page (default: 50, maximum: 100)
 
 **Note:** By default only active (non-deleted) runs are returned. Admin keys can pass `include_deleted=true` to include soft-deleted runs; the `deleted_at` field on each run tells them apart (`null` for active runs).
+
+#### **Process Runs Overview** (table rows)
+```http
+GET /api/v1/runs/overview
+X-API-Key: {API_KEY}
+```
+
+Takes exactly the same filters, sorting and pagination as `GET /api/v1/runs/`. Each item is a flat row for a table instead of a run with its full `steps` list:
+
+```json
+{
+  "id": 42,
+  "process_id": 1,
+  "process_name": "Citizen Onboarding",
+  "entity_id": "CUST-20251003-001",
+  "entity_name": "Acme Corporation",
+  "status": "failed",
+  "meta": {...},
+  "started_at": "2025-10-03T10:00:00",
+  "finished_at": "2025-10-03T10:15:00",
+  "duration_seconds": 900.0,
+  "created_at": "2025-10-03T09:59:58",
+  "updated_at": "2025-10-03T10:15:00",
+  "is_neutralized": false,
+  "deleted_at": null,
+  "scheduled_deletion_at": "2026-10-03T09:59:58",
+  "step_count": 3,
+  "failed_step_count": 1,
+  "failed_steps": ["Send letter"]
+}
+```
+
+A page costs a fixed number of queries (the count, the runs, and one each for their step runs, steps and processes) whatever its size, where `GET /runs/` loads each run's steps with a query of its own. Fetch `GET /api/v1/runs/{run_id}` for one run's steps. For large tables, run `scripts/create_run_indexes.sql` once.
 
 > **💡 Tip:** Use **Global Search** for quick lookups when you don't know the exact field, or **Query Process Runs** for precise filtering with multiple criteria and sorting.
 
@@ -1260,6 +1298,7 @@ The following endpoints support pagination:
 
 - `GET /api/v1/processes/` - List all processes
 - `GET /api/v1/runs/` - List all process runs
+- `GET /api/v1/runs/overview` - List runs as flat table rows
 - `GET /api/v1/admin/api-keys/` - List all API keys (admin only)
 
 ### **Query Parameters**
