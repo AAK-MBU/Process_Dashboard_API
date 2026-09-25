@@ -261,3 +261,35 @@ class ProcessRunPublic(ProcessRunBase):
     status: ProcessRunStatus = ProcessRunStatus.PENDING
     deleted_at: datetime | None = None
     steps: list["ProcessStepRunPublic"] = []
+
+
+class ProcessRunListItem(SQLModel):
+    """A run as one row of a cross-process overview table.
+
+    Carries what a list needs and ``ProcessRunPublic`` lacks (process name,
+    timestamps, step counts), and leaves out the full ``steps`` list, which
+    ``GET /runs/{id}`` returns for the detail view.
+    """
+
+    id: int
+    process_id: int | None = None
+    process_name: str | None = None
+    entity_id: str
+    entity_name: str | None = None
+    status: ProcessRunStatus
+    meta: dict[str, Any] = Field(default_factory=dict)
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    duration_seconds: float | None = Field(
+        default=None, description="finished_at - started_at, when both are set"
+    )
+    created_at: datetime
+    updated_at: datetime
+    is_neutralized: bool = False
+    deleted_at: datetime | None = None
+    scheduled_deletion_at: datetime | None = None
+    step_count: int = 0
+    failed_step_count: int = 0
+    failed_steps: list[str] = Field(
+        default_factory=list, description="Names of the steps whose step run failed"
+    )

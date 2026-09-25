@@ -1,8 +1,9 @@
 """Business logic for process runs."""
 
-from datetime import timedelta
+import re
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import text
+from sqlalchemy import func, literal_column, or_, text
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
@@ -13,6 +14,98 @@ from app.models import (
     ProcessRunCreate,
     ProcessStepRun,
 )
+from app.models.enums import ProcessRunStatus
+
+# Plain columns a run list may be sorted by. ``process_name``, ``duration`` and
+# ``meta.<field>`` are handled separately in ``_apply_sorting``.
+SORTABLE_RUN_COLUMNS = frozenset(
+    {
+        "id",
+        "process_id",
+        "entity_id",
+        "entity_name",
+        "status",
+        "started_at",
+        "finished_at",
+        "created_at",
+        "updated_at",
+        "is_neutralized",
+        "deleted_at",
+        "scheduled_deletion_at",
+    }
+)
+
+# One segment of a metadata path: letters (incl. æøå), digits, _, - and space.
+# Anything else — above all quotes and backslashes — could break out of the
+# SQL string literal the path is embedded in.
+_META_SEGMENT = re.compile(r"^[\w\- ]{1,128}$")
+
+
+# ``meta`` is a TEXT column (``UnicodeJSON`` over ``TEXT``), and SQL Server's
+# JSON_VALUE rejects TEXT outright ("Argument data type text is invalid"), so
+# every JSON function must read it through this cast.
+META_JSON = "CAST(process_run.meta AS NVARCHAR(MAX))"
+
+
+def json_path(field: str) -> str:
+    """Build a quoted JSON path (``$."a"."b"``) from a validated field name.
+
+    Dots separate nested keys, as they did before quoting was added.
+
+    Raises:
+        ValueError: If any segment contains a character outside ``_META_SEGMENT``
+    """
+    segments = field.split(".")
+    for segment in segments:
+        if not _META_SEGMENT.match(segment):
+            raise ValueError(
+                f"Invalid metadata field: '{field}'. Use letters, digits, '_', '-' or "
+                "spaces, with '.' between nested keys"
+            )
+    return "$." + ".".join(f'"{segment}"' for segment in segments)
+
+
+def _parse_statuses(value: str) -> list[ProcessRunStatus]:
+    """Parse ``failed`` or ``failed,cancelled`` into run statuses.
+
+    Raises:
+        ValueError: On an unknown status
+    """
+    statuses = []
+    for raw in value.split(","):
+        raw = raw.strip().lower()
+        if not raw:
+            continue
+        try:
+            statuses.append(ProcessRunStatus(raw))
+        except ValueError:
+            allowed = ", ".join(s.value for s in ProcessRunStatus)
+            raise ValueError(f"Invalid run_status: '{raw}'. Use one of {allowed}") from None
+    if not statuses:
+        raise ValueError("run_status cannot be empty")
+    return statuses
+
+
+def _parse_date(name: str, value: str) -> datetime:
+    """Parse an ISO date or datetime query value.
+
+    Raises:
+        ValueError: If the value is not ISO 8601
+    """
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        raise ValueError(f"Invalid {name}: '{value}'. Expected an ISO 8601 date") from None
+    # The columns hold naive UTC, so an offset-aware bound is converted rather
+    # than compared as-is (which would silently shift it by the offset).
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(UTC).replace(tzinfo=None)
+    return parsed
+
+
+def _escape_like(value: str) -> str:
+    """Escape LIKE wildcards (SQL Server also treats ``[`` as one)."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_").replace("[", "\\[")
 
 
 class ProcessRunService:
@@ -222,20 +315,28 @@ class ProcessRunService:
         sort_direction: str = "desc",
         include_deleted: bool = False,
         include_neutralized: bool = False,
+        q: str | None = None,
+        is_neutralized: bool | None = None,
+        created_after: str | None = None,
+        created_before: str | None = None,
     ):
         """
         Build a filtered and sorted SQLModel statement for process runs.
 
         Args:
+            status: One status, or several separated by commas (OR'd)
             include_deleted: If True, include soft-deleted runs
             include_neutralized: If True, include neutralized runs
             failed_at: If provided, filter runs that failed at this specific step_id
+            q: Free text, matched against entity_id, entity_name and the run's
+                top-level metadata values
+            is_neutralized: If set, only runs with this neutralization state
 
         Returns:
             SQLModel Select statement with all filters and sorting applied
 
         Raises:
-            ValueError: If meta_filter format is invalid
+            ValueError: On an invalid status, date, metadata field or sort field
         """
         statement = select(ProcessRun)
 
@@ -246,14 +347,18 @@ class ProcessRunService:
         # Filter out neutralized runs if requested
         if not include_neutralized:
             statement = statement.where(ProcessRun.is_neutralized == False)  # noqa
+        if is_neutralized is not None:
+            statement = statement.where(ProcessRun.is_neutralized == is_neutralized)  # noqa
 
         # Apply filters
         statement = self._apply_basic_filters(statement, process_id, entity_id, entity_name, status)
         statement = self._apply_date_filters(
             statement, started_after, started_before, finished_after, finished_before
         )
+        statement = self._apply_created_filters(statement, created_after, created_before)
         statement = self._apply_metadata_filters(statement, meta_filter)
         statement = self._apply_failed_at_filter(statement, failed_at)
+        statement = self._apply_search(statement, q)
         statement = self._apply_sorting(statement, order_by, sort_direction)
 
         return statement
@@ -274,7 +379,11 @@ class ProcessRunService:
         if entity_name:
             statement = statement.where(ProcessRun.entity_name.contains(entity_name))
         if status:
-            statement = statement.where(ProcessRun.status == status)
+            statuses = _parse_statuses(status)
+            if len(statuses) == 1:
+                statement = statement.where(ProcessRun.status == statuses[0])
+            else:
+                statement = statement.where(ProcessRun.status.in_(statuses))
         return statement
 
     def _apply_date_filters(
@@ -285,15 +394,37 @@ class ProcessRunService:
         finished_after: str | None,
         finished_before: str | None,
     ):
-        """Apply date range filters to query."""
+        """Apply date range filters to query. Bounds are inclusive."""
         if started_after:
-            statement = statement.where(ProcessRun.started_at >= started_after)
+            statement = statement.where(
+                ProcessRun.started_at >= _parse_date("started_after", started_after)
+            )
         if started_before:
-            statement = statement.where(ProcessRun.started_at <= started_before)
+            statement = statement.where(
+                ProcessRun.started_at <= _parse_date("started_before", started_before)
+            )
         if finished_after:
-            statement = statement.where(ProcessRun.finished_at >= finished_after)
+            statement = statement.where(
+                ProcessRun.finished_at >= _parse_date("finished_after", finished_after)
+            )
         if finished_before:
-            statement = statement.where(ProcessRun.finished_at <= finished_before)
+            statement = statement.where(
+                ProcessRun.finished_at <= _parse_date("finished_before", finished_before)
+            )
+        return statement
+
+    def _apply_created_filters(
+        self, statement, created_after: str | None, created_before: str | None
+    ):
+        """Apply created_at range filters. Bounds are inclusive."""
+        if created_after:
+            statement = statement.where(
+                ProcessRun.created_at >= _parse_date("created_after", created_after)
+            )
+        if created_before:
+            statement = statement.where(
+                ProcessRun.created_at <= _parse_date("created_before", created_before)
+            )
         return statement
 
     def _apply_metadata_filters(self, statement, meta_filter: list[str] | None):
@@ -302,8 +433,12 @@ class ProcessRunService:
         Multiple values for the same field are OR'd together.
         Different fields are AND'd together.
 
+        The field name ends up inside a SQL string literal (the JSON path), so it
+        is validated and quoted by ``json_path`` rather than interpolated raw.
+        The value is always a bound parameter.
+
         Raises:
-            ValueError: If meta_filter format is invalid
+            ValueError: If meta_filter format or a field name is invalid
         """
         if not meta_filter:
             return statement
@@ -327,30 +462,25 @@ class ProcessRunService:
                 )
             filters_by_field[field].append(value)
 
-        # Apply filters: OR within same field, AND across different fields
-        for field, values in filters_by_field.items():
-            if len(values) == 1:
-                # Single value: simple equality
-                statement = statement.where(
-                    text(f"JSON_VALUE(process_run.meta, '$.{field}') = :meta_{field}")
-                ).params(**{f"meta_{field}": values[0]})
-            else:
-                # Multiple values: OR them together, wrapped in parentheses
-                or_conditions = []
-                sql_params = {}
-                for idx, value in enumerate(values):
-                    param_name = f"meta_{field}_{idx}"
-                    or_conditions.append(
-                        f"JSON_VALUE(process_run.meta, '$.{field}') = :{param_name}"
-                    )
-                    sql_params[param_name] = value
-                # Wrap OR conditions in parentheses to ensure proper precedence
-                or_clause = f"({' OR '.join(or_conditions)})"
-                statement = statement.where(text(or_clause)).params(**sql_params)
+        # Apply filters: OR within same field, AND across different fields.
+        # Parameter names are positional, never derived from the field name.
+        for field_idx, (field, values) in enumerate(filters_by_field.items()):
+            path = json_path(field)
+            conditions = []
+            sql_params = {}
+            for value_idx, value in enumerate(values):
+                param_name = f"meta_{field_idx}_{value_idx}"
+                conditions.append(f"JSON_VALUE({META_JSON}, '{path}') = :{param_name}")
+                sql_params[param_name] = value
+            clause = conditions[0] if len(conditions) == 1 else f"({' OR '.join(conditions)})"
+            statement = statement.where(text(clause).bindparams(**sql_params))
         return statement
 
     def _apply_failed_at_filter(self, statement, failed_at: int | None):
         """Apply filter for runs that failed at a specific step_id.
+
+        An EXISTS rather than a join, so a run with more than one failed step run
+        for the same step is still listed once.
 
         Args:
             statement: The SQLModel statement to filter
@@ -362,33 +492,79 @@ class ProcessRunService:
         if failed_at is None:
             return statement
 
-        # Join with ProcessStepRun and filter for failed steps
         from app.models.enums import StepRunStatus
-        from app.models.process_step_run import ProcessStepRun
 
-        statement = statement.join(ProcessStepRun).where(
-            ProcessStepRun.step_id == failed_at, ProcessStepRun.status == StepRunStatus.FAILED
+        failed_step = (
+            select(ProcessStepRun.id)
+            .where(
+                ProcessStepRun.run_id == ProcessRun.id,
+                ProcessStepRun.step_id == failed_at,
+                ProcessStepRun.status == StepRunStatus.FAILED,
+                ProcessStepRun.deleted_at.is_(None),
+            )
+            .exists()
+        )
+        return statement.where(failed_step)
+
+    def _apply_search(self, statement, q: str | None):
+        """Free-text match on entity_id, entity_name and top-level metadata values.
+
+        Metadata is searched across every process (unlike ``/runs/search``, which
+        only reads a process's declared schema). ``OPENJSON`` walks the stored
+        JSON so keys are never matched, only string/number/boolean values.
+        ``meta`` is a TEXT column, hence the cast; ``ISJSON`` keeps a malformed
+        row from failing the whole query.
+        """
+        if not q or not q.strip():
+            return statement
+        like = f"%{_escape_like(q.strip())}%"
+        meta_match = text(
+            "EXISTS (SELECT 1 FROM OPENJSON("
+            f"CASE WHEN ISJSON({META_JSON}) = 1 THEN {META_JSON} END) AS meta_kv "
+            "WHERE meta_kv.[type] IN (1, 2, 3) AND meta_kv.[value] LIKE :q_like ESCAPE '\\')"
+        ).bindparams(q_like=like)
+        return statement.where(
+            or_(
+                ProcessRun.entity_id.ilike(like, escape="\\"),
+                ProcessRun.entity_name.ilike(like, escape="\\"),
+                meta_match,
+            )
         )
 
-        return statement
-
     def _apply_sorting(self, statement, order_by: str, sort_direction: str):
-        """Apply sorting to query."""
+        """Apply sorting to query, with ``id`` as a tie-breaker for stable paging.
+
+        Raises:
+            ValueError: If order_by is not a sortable field
+        """
+        descending = sort_direction.lower() == "desc"
         if order_by.startswith("meta."):
             # Sort by JSON field
-            json_field = order_by.replace("meta.", "")
-            direction = "DESC" if sort_direction.lower() == "desc" else "ASC"
+            path = json_path(order_by[len("meta.") :])
+            direction = "DESC" if descending else "ASC"
+            statement = statement.order_by(text(f"JSON_VALUE({META_JSON}, '{path}') {direction}"))
+        elif order_by == "process_name":
+            statement = statement.outerjoin(Process, Process.id == ProcessRun.process_id)
             statement = statement.order_by(
-                text(f"JSON_VALUE(process_run.meta, '$.{json_field}') {direction}")
+                Process.name.desc() if descending else Process.name.asc()
             )
+        elif order_by == "duration":
+            duration = func.datediff(
+                literal_column("second"), ProcessRun.started_at, ProcessRun.finished_at
+            )
+            statement = statement.order_by(duration.desc() if descending else duration.asc())
+        elif order_by in SORTABLE_RUN_COLUMNS:
+            column = getattr(ProcessRun, order_by)
+            statement = statement.order_by(column.desc() if descending else column.asc())
         else:
-            # Sort by regular field
-            column = getattr(ProcessRun, order_by, ProcessRun.created_at)
-            if sort_direction.lower() == "desc":
-                statement = statement.order_by(column.desc())
-            else:
-                statement = statement.order_by(column.asc())
-        return statement
+            allowed = ", ".join(sorted(SORTABLE_RUN_COLUMNS | {"process_name", "duration"}))
+            raise ValueError(
+                f"Invalid order_by: '{order_by}'. Use one of {allowed}, or meta.<field>"
+            )
+        if order_by == "id":
+            # SQL Server rejects a column listed twice in ORDER BY.
+            return statement
+        return statement.order_by(ProcessRun.id.desc() if descending else ProcessRun.id.asc())
 
     def get_metadata_filter_options(
         self, process_id: int, session: Session

@@ -7,6 +7,7 @@ from sqlmodel import Session, select
 
 from app.models import MatchedField, ProcessRun
 from app.services.process_service import ProcessService
+from app.services.run_service import META_JSON, json_path
 
 
 class SearchService:
@@ -38,9 +39,12 @@ class SearchService:
                 metadata_fields = fields_info.get("metadata_fields", {})
 
                 for field_name in metadata_fields.keys():
-                    or_conditions.append(
-                        text(f"JSON_VALUE(process_run.meta, '$.{field_name}') LIKE :search")
-                    )
+                    try:
+                        path = json_path(field_name)
+                    except ValueError:
+                        # A schema key that cannot be quoted safely is not searched.
+                        continue
+                    or_conditions.append(text(f"JSON_VALUE({META_JSON}, '{path}') LIKE :search"))
             except Exception:
                 pass
 
