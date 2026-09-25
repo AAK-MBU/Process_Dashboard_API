@@ -1,5 +1,7 @@
 """API endpoints for managing process runs."""
 
+from collections.abc import Sequence
+
 from fastapi import (
     APIRouter,
     Depends,
@@ -11,6 +13,7 @@ from fastapi import (
 )
 from fastapi_pagination import Page, Params
 from fastapi_pagination.ext.sqlmodel import paginate
+from sqlalchemy.orm import selectinload
 
 from app.api.dependencies import (
     RequireAdminKey,
@@ -24,8 +27,11 @@ from app.models import (
     NeutralizationResult,
     ProcessRun,
     ProcessRunCreate,
+    ProcessRunListItem,
     ProcessRunMetadataUpdate,
     ProcessRunPublic,
+    ProcessStepRun,
+    StepRunStatus,
     # SearchResultItem,
 )
 from app.services import DataRetentionService
@@ -108,6 +114,133 @@ def search_process_runs(
     }
 
 
+class RunFilters:
+    """Query parameters shared by ``GET /runs/`` and ``GET /runs/overview``.
+
+    One definition, so the list and the overview can never disagree about what
+    a filter means.
+    """
+
+    def __init__(
+        self,
+        # Basic filters
+        process_id: int | None = Query(None, description="Filter by process ID"),
+        entity_id: str | None = Query(None, description="Filter by entity ID (exact match)"),
+        entity_name: str | None = Query(None, description="Filter by entity name (partial match)"),
+        run_status: str | None = Query(
+            None,
+            description=(
+                "Filter by status. Several may be given separated by commas, "
+                "e.g. 'failed,cancelled'"
+            ),
+        ),
+        q: str | None = Query(
+            None,
+            description=(
+                "Free text, partial and case-insensitive, matched against entity_id, "
+                "entity_name and top-level metadata values. Combines with every other filter"
+            ),
+        ),
+        is_neutralized: bool | None = Query(
+            None, description="Only neutralized (true) or not neutralized (false) runs"
+        ),
+        # Date filters (ISO 8601, inclusive)
+        started_after: str | None = Query(
+            None, description="Filter runs started at or after this date (ISO format)"
+        ),
+        started_before: str | None = Query(
+            None, description="Filter runs started at or before this date (ISO format)"
+        ),
+        finished_after: str | None = Query(
+            None, description="Filter runs finished at or after this date (ISO format)"
+        ),
+        finished_before: str | None = Query(
+            None, description="Filter runs finished at or before this date (ISO format)"
+        ),
+        created_after: str | None = Query(
+            None, description="Filter runs created at or after this date (ISO format)"
+        ),
+        created_before: str | None = Query(
+            None, description="Filter runs created at or before this date (ISO format)"
+        ),
+        # Metadata filters (dynamic)
+        meta_filter: list[str] | None = Query(
+            None,
+            description=(
+                "Metadata filter in format 'field:value'. Can be specified multiple "
+                "times; the same field is OR'd, different fields are AND'd"
+            ),
+        ),
+        # Step failure filter
+        failed_at: int | None = Query(
+            None,
+            description="Filter runs that failed at a specific step_id",
+        ),
+        # Soft delete
+        include_deleted: bool = Query(
+            False,
+            description="Include soft-deleted runs in the result (requires an admin API key)",
+        ),
+        # Sorting
+        order_by: str = Query(
+            "created_at",
+            description=(
+                "Field to sort by: a run column, process_name, duration or meta.<field>. "
+                "Unknown fields return 400"
+            ),
+        ),
+        sort_direction: str = Query("desc", pattern="^(asc|desc)$"),
+    ):
+        self.process_id = process_id
+        self.entity_id = entity_id
+        self.entity_name = entity_name
+        self.run_status = run_status
+        self.q = q
+        self.is_neutralized = is_neutralized
+        self.started_after = started_after
+        self.started_before = started_before
+        self.finished_after = finished_after
+        self.finished_before = finished_before
+        self.created_after = created_after
+        self.created_before = created_before
+        self.meta_filter = meta_filter
+        self.failed_at = failed_at
+        self.include_deleted = include_deleted
+        self.order_by = order_by
+        self.sort_direction = sort_direction
+
+    def statement(self, run_service, api_key):
+        """Build the filtered statement, turning bad input into 400/403."""
+        if self.include_deleted and api_key.role != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admin access required to include soft-deleted runs",
+            )
+        try:
+            return run_service.build_filtered_statement(
+                process_id=self.process_id,
+                entity_id=self.entity_id,
+                entity_name=self.entity_name,
+                status=self.run_status,
+                started_after=self.started_after,
+                started_before=self.started_before,
+                finished_after=self.finished_after,
+                finished_before=self.finished_before,
+                meta_filter=self.meta_filter,
+                failed_at=self.failed_at,
+                order_by=self.order_by,
+                sort_direction=self.sort_direction,
+                include_deleted=self.include_deleted,
+                include_neutralized=True,
+                q=self.q,
+                is_neutralized=self.is_neutralized,
+                created_after=self.created_after,
+                created_before=self.created_before,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+
+
 @router.get(
     "/",
     response_model=Page[ProcessRunPublic],
@@ -120,75 +253,82 @@ def list_process_runs(
     session: SessionDep,
     run_service: RunServiceDep,
     api_key: RequireApiKey,
-    # Basic filters
-    process_id: int | None = Query(None, description="Filter by process ID"),
-    entity_id: str | None = Query(None, description="Filter by entity ID"),
-    entity_name: str | None = Query(None, description="Filter by entity name (partial match)"),
-    run_status: str | None = Query(None, description="Filter by status"),
-    # Date filters
-    started_after: str | None = Query(
-        None, description="Filter runs started after this date (ISO format)"
-    ),
-    started_before: str | None = Query(
-        None, description="Filter runs started before this date (ISO format)"
-    ),
-    finished_after: str | None = Query(
-        None, description="Filter runs finished after this date (ISO format)"
-    ),
-    finished_before: str | None = Query(
-        None, description="Filter runs finished before this date (ISO format)"
-    ),
-    # Metadata filters (dynamic)
-    meta_filter: list[str] | None = Query(
-        None,
-        description=("Metadata filter in format 'field:value'. Can be specified multiple times"),
-    ),
-    # Step failure filter
-    failed_at: int | None = Query(
-        None,
-        description="Filter runs that failed at a specific step_id",
-    ),
-    # Soft delete
-    include_deleted: bool = Query(
-        False, description="Include soft-deleted runs in the result (requires an admin API key)"
-    ),
-    # Sorting
-    order_by: str = Query("created_at", description="Field to sort by"),
-    sort_direction: str = Query("desc", regex="^(asc|desc)$"),
+    filters: RunFilters = Depends(),
     # Pagination
     params: Params = Depends(),
 ) -> Page[ProcessRun]:
     """List all process runs with optional filters and sorting."""
-    if include_deleted and api_key.role != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required to include soft-deleted runs",
-        )
-
-    try:
-        statement = run_service.build_filtered_statement(
-            process_id=process_id,
-            entity_id=entity_id,
-            entity_name=entity_name,
-            status=run_status,
-            started_after=started_after,
-            started_before=started_before,
-            finished_after=finished_after,
-            finished_before=finished_before,
-            meta_filter=meta_filter,
-            failed_at=failed_at,
-            order_by=order_by,
-            sort_direction=sort_direction,
-            include_deleted=include_deleted,
-            include_neutralized=True,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+    statement = filters.statement(run_service, api_key)
 
     # Paginate and add Link headers
     page_data = paginate(session, statement, params)
     add_pagination_links(request, response, page_data)
 
+    return page_data
+
+
+def _to_list_items(runs: Sequence[ProcessRun]) -> list[ProcessRunListItem]:
+    """Summarise runs for the overview. Steps and process are eager-loaded."""
+    items = []
+    for run in runs:
+        steps = [step for step in run.steps if step.deleted_at is None]
+        failed = [step for step in steps if step.status == StepRunStatus.FAILED]
+        duration = None
+        if run.started_at and run.finished_at:
+            duration = (run.finished_at - run.started_at).total_seconds()
+        items.append(
+            ProcessRunListItem(
+                id=run.id,
+                process_id=run.process_id,
+                process_name=run.process.name if run.process else None,
+                entity_id=run.entity_id,
+                entity_name=run.entity_name,
+                status=run.status,
+                meta=run.meta or {},
+                started_at=run.started_at,
+                finished_at=run.finished_at,
+                duration_seconds=duration,
+                created_at=run.created_at,
+                updated_at=run.updated_at,
+                is_neutralized=run.is_neutralized,
+                deleted_at=run.deleted_at,
+                scheduled_deletion_at=run.scheduled_deletion_at,
+                step_count=len(steps),
+                failed_step_count=len(failed),
+                failed_steps=[
+                    step.step.name if step.step else f"step {step.step_index}" for step in failed
+                ],
+            )
+        )
+    return items
+
+
+@router.get(
+    "/overview",
+    response_model=Page[ProcessRunListItem],
+    summary="Runs across all processes, as table rows",
+    description=(
+        "The same filters, sorting and pagination as GET /runs/, but each item is a "
+        "flat row: process name, timestamps, duration and step counts instead of the "
+        "full steps list. Fetch GET /runs/{id} for a run's steps."
+    ),
+)
+def list_process_runs_overview(
+    request: Request,
+    response: Response,
+    session: SessionDep,
+    run_service: RunServiceDep,
+    api_key: RequireApiKey,
+    filters: RunFilters = Depends(),
+    params: Params = Depends(),
+) -> Page[ProcessRunListItem]:
+    """List runs as overview rows, with a fixed number of queries per page."""
+    statement = filters.statement(run_service, api_key).options(
+        selectinload(ProcessRun.steps).selectinload(ProcessStepRun.step),
+        selectinload(ProcessRun.process),
+    )
+    page_data = paginate(session, statement, params, transformer=_to_list_items)
+    add_pagination_links(request, response, page_data)
     return page_data
 
 
